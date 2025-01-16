@@ -12,6 +12,7 @@ accelerate launch run_clm.py \
     --auto_find_batch_size \
     --gradient_accumulation_steps 1 \
     --block_size 2048 \
+    --attn_implementation flash_attention_2 \
     --lr_scheduler_type cosine \
     --warmup_ratio 0.015 \
     --learning_rate 3e-4 \

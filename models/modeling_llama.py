@@ -6,12 +6,12 @@ import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss
 
 from transformers.cache_utils import Cache
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, TokenClassifierOutput
+from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
-from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaPreTrainedModel, LlamaModel
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 from .configuration_llama import MyLlamaConfig
 
 
