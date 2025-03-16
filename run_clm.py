@@ -256,13 +256,13 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, models.PCoTArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args, pcot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, pcot_args = parser.parse_args_into_dataclasses()
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -435,6 +435,25 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported by this script. "
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
+    
+    # >>> add <bot>, <latent> and <eot> to the tokenizer
+    # pcot: parallel chain-of-thought with continuous tokens
+    def get_special_token(tokenizer, token):
+        if token not in tokenizer.additional_special_tokens:
+            tokenizer.add_special_tokens({'additional_special_tokens': (token, )}, replace_additional_special_tokens=False)
+        return tokenizer.convert_tokens_to_ids(token)
+
+    if pcot_args.bot_token_id is None:
+        pcot_args.bot_token_id = get_special_token(tokenizer, '<pcot.bot>')
+    if pcot_args.eot_token_id is None:
+        pcot_args.eot_token_id = get_special_token(tokenizer, '<pcot.eot>')
+    if pcot_args.latent_token_id is None:
+        pcot_args.latent_token_id = get_special_token(tokenizer, '<pcot.latent>')
+    if tokenizer.pad_token_id is None:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    if tokenizer.eos_token_id is None:
+        tokenizer.add_special_tokens({'eos_token': '[EOS]'})
+    # <<<
 
     if model_args.model_name_or_path:
         torch_dtype = (
@@ -477,36 +496,6 @@ def main():
         column_names = list(raw_datasets["validation"].features)
     text_column_name = "text" if "text" in column_names else column_names[0]
 
-    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
-    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
-
-    def tokenize_function(examples):
-        with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
-        # clm input could be much much longer than block_size
-        if "Token indices sequence length is longer than the" in cl.out:
-            tok_logger.warning(
-                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
-                " before being passed to the model."
-            )
-        return output
-
-    with training_args.main_process_first(desc="dataset map tokenization"):
-        if not data_args.streaming:
-            tokenized_datasets = raw_datasets.map(
-                tokenize_function,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on dataset",
-            )
-        else:
-            tokenized_datasets = raw_datasets.map(
-                tokenize_function,
-                batched=True,
-                remove_columns=column_names,
-            )
     if hasattr(config, "max_position_embeddings"):
         max_pos_embeddings = config.max_position_embeddings
     else:
@@ -532,21 +521,29 @@ def main():
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
-    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-        total_length = (total_length // block_size) * block_size
-        # Split by chunks of max_len.
-        result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
-        result["labels"] = result["input_ids"].copy()
-        return result
+    data_processor = models.COTDataProcessor(
+        tokenizer=tokenizer,
+        pcot_args=pcot_args,
+        max_seq_length=block_size,
+    )
+
+    with training_args.main_process_first(desc="dataset map tokenization"):
+        if not data_args.streaming:
+            tokenized_datasets = raw_datasets.map(
+                data_processor.tokenize_function,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc="Running tokenizer on dataset",
+                # cache_file_names={"train": "/tmp/dataset_cache_train.arrow", "validation": "/tmp/dataset_cache_valid.arrow"},
+            )
+        else:
+            tokenized_datasets = raw_datasets.map(
+                data_processor.tokenize_function,
+                batched=True,
+                remove_columns=column_names,
+            )
 
     # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
     # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
@@ -558,15 +555,16 @@ def main():
     with training_args.main_process_first(desc="grouping texts together"):
         if not data_args.streaming:
             lm_datasets = tokenized_datasets.map(
-                group_texts,
+                data_processor.group_texts,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc=f"Grouping texts in chunks of {block_size}",
+                # cache_file_names={"train": "/tmp/dataset_cache_train2.arrow", "validation": "/tmp/dataset_cache_valid2.arrow"},
             )
         else:
             lm_datasets = tokenized_datasets.map(
-                group_texts,
+                data_processor.group_texts,
                 batched=True,
             )
 
@@ -593,15 +591,32 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+        metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
 
         def compute_metrics(eval_preds):
-            preds, labels = eval_preds
+            preds, (labels, _) = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, 1:].reshape(-1)
-            preds = preds[:, :-1].reshape(-1)
-            return metric.compute(predictions=preds, references=labels)
+            labels = labels[:, 1:]
+            preds = preds[:, :-1]
+            labels[labels == -100] = tokenizer.pad_token_id
+            preds[preds == -100] = tokenizer.pad_token_id
+            
+            # ignore tokens after eos_token_id
+            def ignore_after_eos(tokens):
+                tokens = tokens.tolist()
+                if tokenizer.eos_token_id in tokens:
+                    tokens = tokens[:tokens.index(tokenizer.eos_token_id)]
+                return tokens
+            preds = [ignore_after_eos(pred) for pred in preds]
+            labels = [ignore_after_eos(label) for label in labels]
+
+            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+            return metric.compute(predictions=decoded_preds, references=decoded_labels)
+    
+    model.pcot_args = pcot_args
+    pcot_args.save(training_args.output_dir)
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -611,7 +626,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         processing_class=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=default_data_collator,
+        data_collator=data_processor.data_collator,
         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_xla_available() else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval and not is_torch_xla_available()

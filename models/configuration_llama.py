@@ -20,5 +20,5 @@
 """ LLaMA model configuration"""
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-class MyLlamaConfig(LlamaConfig):
-    model_type = "my-llama"
+class PCoTLlamaConfig(LlamaConfig):
+    model_type = "pcot-llama"

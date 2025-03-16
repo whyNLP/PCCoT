@@ -8,56 +8,32 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
-from transformers.cache_utils import Cache
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
+from transformers.cache_utils import Cache, DynamicCache
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
-from .configuration_llama import MyLlamaConfig
+from .configuration_llama import PCoTLlamaConfig
+from .pcot_arguments import PCoTArguments
 
 
-class MyLlamaModel(LlamaModel):
+class PCoTLlamaForCausalLM(LlamaForCausalLM):
     
-    config_class = MyLlamaConfig
+    config_class = PCoTLlamaConfig
 
-    def forward(
-        self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-    ) -> Union[Tuple, BaseModelOutputWithPast]:
-        
-        output = super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            cache_position=cache_position,
-        )
-
-        return output
-
-
-class MyLlamaForCausalLM(LlamaForCausalLM):
-    
-    config_class = MyLlamaConfig
-
-    def __init__(self, config: MyLlamaConfig):
+    def __init__(self, config: PCoTLlamaConfig):
         super(LlamaForCausalLM, self).__init__(config)
-        self.model = MyLlamaModel(config)
+        self.model = LlamaModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        hidden_dim = config.hidden_size
+        self.prj = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+
+        self.pcot_args: PCoTArguments = None
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -75,6 +51,11 @@ class MyLlamaForCausalLM(LlamaForCausalLM):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        key_indices = None,
+        cot_input_ids = None,
+        cot_labels = None,
+        cot_attention_mask = None,
+        cot_kd_indices = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -107,10 +88,12 @@ class MyLlamaForCausalLM(LlamaForCausalLM):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        ## Part 1. teacher CoT
+
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            input_ids=cot_input_ids,
+            attention_mask=cot_attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
@@ -131,9 +114,61 @@ class MyLlamaForCausalLM(LlamaForCausalLM):
         logits = logits.float()
 
         loss = None
-        if labels is not None:
+        if cot_labels is not None:
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = cot_labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels) * self.pcot_args.loss_alpha
+
+        ## Part 2. student CoT
+            
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        question_boundary, latent_boundary, ccot_kd_index = key_indices
+        ccot_outputs = self.model(
+            input_ids=input_ids[:, :question_boundary],
+            attention_mask=attention_mask[:, :question_boundary],
+            past_key_values=DynamicCache(),
+        )
+        latent_input_ids = input_ids[:, question_boundary:latent_boundary]
+        latent_input_embeds = self.model.get_input_embeddings()(latent_input_ids)
+
+        # iteratively predict the latent tokens
+        for _ in range(self.pcot_args.num_iterations):
+            # manually duplicate the past_key_values
+            ccot_past_key_values = DynamicCache()
+            ccot_past_key_values.key_cache = ccot_outputs.past_key_values.key_cache[:]
+            ccot_past_key_values.value_cache = ccot_outputs.past_key_values.value_cache[:]
+            # update the ccot_outputs
+            latent_outputs = self.model(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
+            # get the last hidden state
+            last_hidden_state = latent_outputs[0]
+            # project the hidden state
+            projected_hidden_state = self.prj(last_hidden_state)
+            # get the new input_ids
+            latent_input_embeds = torch.cat([latent_input_embeds[:, :1], projected_hidden_state[:, 1:]], dim=1)
+        
+        # predict the answer
+        answer_outputs = self.model(
+            input_ids=input_ids[:, latent_boundary:],
+            attention_mask=attention_mask[:, latent_boundary:],
+            past_key_values=latent_outputs.past_key_values,
+        )
+
+        # get the logits
+        answer_hidden_states = answer_outputs[0]
+        answer_logits = self.lm_head(answer_hidden_states)
+        answer_logits = answer_logits.float()
+
+        # calculate the loss
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = answer_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
             loss_fct = CrossEntropyLoss()
@@ -141,15 +176,23 @@ class MyLlamaForCausalLM(LlamaForCausalLM):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels)
+            loss += loss_fct(shift_logits, shift_labels) * self.pcot_args.loss_beta
+
+        ## Part 3. knowledge distillation
+        teacher_hidden_states = hidden_states.gather(1, cot_kd_indices[:, None, None].expand(-1, -1, hidden_states.size(-1)))
+        student_hidden_states = answer_hidden_states[:, ccot_kd_index:ccot_kd_index+1]
+
+        # calculate the loss
+        kd_loss = F.l1_loss(student_hidden_states, teacher_hidden_states)
+        loss += kd_loss * self.pcot_args.loss_gamma
 
         if not return_dict:
-            output = (logits,) + outputs[1:]
+            output = (answer_logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
             loss=loss,
-            logits=logits,
+            logits=answer_logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
