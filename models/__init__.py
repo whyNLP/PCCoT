@@ -2,6 +2,7 @@ from .configuration_llama import PCoTLlamaConfig
 from .modeling_llama import PCoTLlamaForCausalLM
 from .pcot_arguments import PCoTArguments
 from .data_processor import COTDataProcessor
+from .wandb_callback import CustomWandbCallback
 
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoModelForTokenClassification
 

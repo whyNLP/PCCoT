@@ -613,6 +613,10 @@ def main():
 
             decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+            for i, pred, label in zip(range(10), decoded_preds, decoded_labels):
+                logger.info(f"pred  {i}: {pred}")
+                logger.info(f"label {i}: {label}")
             return metric.compute(predictions=decoded_preds, references=decoded_labels)
     
     model.pcot_args = pcot_args
@@ -631,6 +635,7 @@ def main():
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval and not is_torch_xla_available()
         else None,
+        callbacks=[models.CustomWandbCallback] if training_args.do_train else None,
     )
 
     # Training

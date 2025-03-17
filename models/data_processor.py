@@ -119,6 +119,7 @@ class COTDataProcessor:
             padding=True,
             return_tensors="pt",
         )["input_ids"]
+        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
         cot_kd_index = torch.tensor([item['cot_kd_index'] for item in features])
 
         questions = self.tokenizer.pad(
@@ -136,15 +137,17 @@ class COTDataProcessor:
         ccot_ids_woq, ccot_woq_attention_mask = ccot_ids_woq["input_ids"], ccot_ids_woq["attention_mask"]
         ccot_input_ids = torch.cat([questions, ccot_ids_woq], dim=1)
         ccot_attention_mask = torch.cat([question_attention_mask, ccot_woq_attention_mask], dim=1)
+        ccot_labels = ccot_ids_woq[:, 1 + self.pcot_args.num_latent_tokens:] # eot_token and the following tokens
+        ccot_labels[ccot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
         ccot_key_indices = [
-            questions.size(1) + 1, # question + bot_token
+            questions.size(1), # question
             questions.size(1) + 1 + self.pcot_args.num_latent_tokens, # question + bot_token + latent_tokens
             1 + len(self.tokenized_answer_prompt) - 1 # eot_token + answer_prompt
         ]
 
         return {
             "input_ids": ccot_input_ids,
-            "labels": ccot_input_ids[:, ccot_key_indices[1]:],
+            "labels": ccot_labels,
             "attention_mask": ccot_attention_mask,
             "key_indices": ccot_key_indices,
             "cot_input_ids": cot_input_ids,

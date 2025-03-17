@@ -1,6 +1,6 @@
 import math
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict, Any
 
 import torch
 import torch.nn.functional as F
@@ -34,6 +34,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         )
 
         self.pcot_args: PCoTArguments = None
+        self._log_cache: Dict[str, Any] = {}
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -113,7 +114,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             logits = self.lm_head(hidden_states)
         logits = logits.float()
 
-        loss = None
+        cot_loss = None
         if cot_labels is not None:
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
@@ -124,7 +125,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels) * self.pcot_args.loss_alpha
+            cot_loss = loss_fct(shift_logits, shift_labels)
 
         ## Part 2. student CoT
             
@@ -151,12 +152,12 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             # project the hidden state
             projected_hidden_state = self.prj(last_hidden_state)
             # get the new input_ids
-            latent_input_embeds = torch.cat([latent_input_embeds[:, :1], projected_hidden_state[:, 1:]], dim=1)
+            latent_input_embeds = torch.cat([latent_input_embeds[:, :1], projected_hidden_state[:, :-1]], dim=1)
         
         # predict the answer
         answer_outputs = self.model(
             input_ids=input_ids[:, latent_boundary:],
-            attention_mask=attention_mask[:, latent_boundary:],
+            attention_mask=attention_mask,
             past_key_values=latent_outputs.past_key_values,
         )
 
@@ -166,6 +167,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         answer_logits = answer_logits.float()
 
         # calculate the loss
+        ccot_loss = None
         if labels is not None:
             # Shift so that tokens < n predict n
             shift_logits = answer_logits[..., :-1, :].contiguous()
@@ -176,7 +178,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss += loss_fct(shift_logits, shift_labels) * self.pcot_args.loss_beta
+            ccot_loss = loss_fct(shift_logits, shift_labels)
 
         ## Part 3. knowledge distillation
         teacher_hidden_states = hidden_states.gather(1, cot_kd_indices[:, None, None].expand(-1, -1, hidden_states.size(-1)))
@@ -184,7 +186,12 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
 
         # calculate the loss
         kd_loss = F.l1_loss(student_hidden_states, teacher_hidden_states)
-        loss += kd_loss * self.pcot_args.loss_gamma
+        loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
+
+        # log cache
+        self._log_cache["cot_loss"] = cot_loss.item()
+        self._log_cache["ccot_loss"] = ccot_loss.item()
+        self._log_cache["kd_loss"] = kd_loss.item()
 
         if not return_dict:
             output = (answer_logits,) + outputs[1:]
