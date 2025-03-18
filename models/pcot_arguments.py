@@ -35,7 +35,7 @@ class PCoTArguments:
         metadata={"help": "The number of latent tokens to use in the PCoT model."}
     )
     num_iterations: int = field(
-        default=7,
+        default=6,
         metadata={"help": "The number of iterations to use in the PCoT model."}
     )
 

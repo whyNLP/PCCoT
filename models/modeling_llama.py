@@ -132,12 +132,15 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         question_boundary, latent_boundary, ccot_kd_index = key_indices
         ccot_outputs = self.model(
-            input_ids=input_ids[:, :question_boundary],
-            attention_mask=attention_mask[:, :question_boundary],
+            input_ids=input_ids[:, :latent_boundary],
+            attention_mask=attention_mask[:, :latent_boundary],
             past_key_values=DynamicCache(),
         )
-        latent_input_ids = input_ids[:, question_boundary:latent_boundary]
-        latent_input_embeds = self.model.get_input_embeddings()(latent_input_ids)
+        last_hidden_state = ccot_outputs[0][:, question_boundary:latent_boundary-1]
+        latent_input_embeds = self.prj(last_hidden_state)
+        for l in range(len(ccot_outputs.past_key_values)):
+            ccot_outputs.past_key_values.key_cache[l] = ccot_outputs.past_key_values.key_cache[l][:, :question_boundary]
+            ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :question_boundary]
 
         # iteratively predict the latent tokens
         for _ in range(self.pcot_args.num_iterations):
@@ -185,7 +188,8 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         student_hidden_states = answer_hidden_states[:, ccot_kd_index:ccot_kd_index+1]
 
         # calculate the loss
-        kd_loss = F.l1_loss(student_hidden_states, teacher_hidden_states)
+        kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states)
+        kd_loss /= teacher_hidden_states.std()
         loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
 
         # log cache
