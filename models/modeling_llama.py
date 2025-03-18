@@ -136,11 +136,11 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             attention_mask=attention_mask[:, :latent_boundary],
             past_key_values=DynamicCache(),
         )
-        last_hidden_state = ccot_outputs[0][:, question_boundary:latent_boundary-1]
+        last_hidden_state = ccot_outputs[0][:, question_boundary-1:latent_boundary-1]
         latent_input_embeds = self.prj(last_hidden_state)
         for l in range(len(ccot_outputs.past_key_values)):
-            ccot_outputs.past_key_values.key_cache[l] = ccot_outputs.past_key_values.key_cache[l][:, :question_boundary]
-            ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :question_boundary]
+            ccot_outputs.past_key_values.key_cache[l] = ccot_outputs.past_key_values.key_cache[l][:, :, :question_boundary]
+            ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :, :question_boundary]
 
         # iteratively predict the latent tokens
         for _ in range(self.pcot_args.num_iterations):

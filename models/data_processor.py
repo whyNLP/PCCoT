@@ -140,7 +140,7 @@ class COTDataProcessor:
         ccot_labels = ccot_ids_woq[:, 1 + self.pcot_args.num_latent_tokens:] # eot_token and the following tokens
         ccot_labels[ccot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
         ccot_key_indices = [
-            questions.size(1), # question
+            questions.size(1) + 1, # question + bot_token
             questions.size(1) + 1 + self.pcot_args.num_latent_tokens, # question + bot_token + latent_tokens
             1 + len(self.tokenized_answer_prompt) - 1 # eot_token + answer_prompt
         ]
