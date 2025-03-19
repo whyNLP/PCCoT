@@ -100,7 +100,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
+            output_hidden_states=True,
             return_dict=return_dict,
             cache_position=cache_position,
         )
@@ -162,6 +162,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             input_ids=input_ids[:, latent_boundary:],
             attention_mask=attention_mask,
             past_key_values=latent_outputs.past_key_values,
+            output_hidden_states=True,
         )
 
         # get the logits
@@ -184,8 +185,9 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             ccot_loss = loss_fct(shift_logits, shift_labels)
 
         ## Part 3. knowledge distillation
-        teacher_hidden_states = hidden_states.gather(1, cot_kd_indices[:, None, None].expand(-1, -1, hidden_states.size(-1)))
-        student_hidden_states = answer_hidden_states[:, ccot_kd_index:ccot_kd_index+1]
+        teacher_hidden_states = torch.stack(outputs.hidden_states, dim=1).detach()[:, 1:] # (batch_size, num_layers, seq_len, hidden_size)
+        teacher_hidden_states = teacher_hidden_states.gather(2, cot_kd_indices[:, None, None, None].expand(-1, self.config.num_hidden_layers, -1, self.config.hidden_size))
+        student_hidden_states = torch.stack(answer_outputs.hidden_states, dim=1)[:, 1:, ccot_kd_index:ccot_kd_index+1]
 
         # calculate the loss
         kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states)
