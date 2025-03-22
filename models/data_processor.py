@@ -34,8 +34,9 @@ class COTDataProcessor:
             )["input_ids"],
             "steps": [
                 self.tokenizer(
-                    steps, return_attention_mask=False, add_special_tokens=False
+                    steps[:-1], return_attention_mask=False, add_special_tokens=False
                 )["input_ids"]
+                if len(steps) > 1 else []
                 for steps in examples["steps"]
             ],
             "answer": self.tokenizer(
