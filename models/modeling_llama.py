@@ -195,7 +195,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
 
         # calculate the loss
         kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states, reduction="none").reshape(self.config.num_hidden_layers, -1) # (num_layers, batch_size * hidden_size)
-        kd_loss /= teacher_hidden_states.reshape(self.config.num_hidden_layers, -1).std(dim=-1)
+        kd_loss /= teacher_hidden_states.reshape(self.config.num_hidden_layers, -1).std(dim=-1, keepdim=True)
         kd_loss = kd_loss.mean()
         loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
 
