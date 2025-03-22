@@ -189,15 +189,21 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         teacher_hidden_states = teacher_hidden_states.gather(2, cot_kd_indices[:, None, None, None].expand(-1, self.config.num_hidden_layers, -1, self.config.hidden_size))
         student_hidden_states = torch.stack(answer_outputs.hidden_states, dim=1)[:, 1:, ccot_kd_index:ccot_kd_index+1]
 
+        # transpose to (num_layers, batch_size, hidden_size)
+        teacher_hidden_states = teacher_hidden_states.transpose(0, 1).squeeze(2)
+        student_hidden_states = student_hidden_states.transpose(0, 1).squeeze(2)
+
         # calculate the loss
-        kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states)
-        kd_loss /= teacher_hidden_states.std()
+        kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states, reduction="none").reshape(self.config.num_hidden_layers, -1) # (num_layers, batch_size * hidden_size)
+        kd_loss /= teacher_hidden_states.reshape(self.config.num_hidden_layers, -1).std(dim=-1)
+        kd_loss = kd_loss.mean()
         loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
 
         # log cache
         self._log_cache["cot_loss"] = cot_loss.item()
         self._log_cache["ccot_loss"] = ccot_loss.item()
         self._log_cache["kd_loss"] = kd_loss.item()
+        self._log_cache["teacher_std"] = teacher_hidden_states.std().item()
 
         if not return_dict:
             output = (answer_logits,) + outputs[1:]
