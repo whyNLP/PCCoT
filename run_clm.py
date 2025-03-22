@@ -635,7 +635,7 @@ def main():
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval and not is_torch_xla_available()
         else None,
-        callbacks=[models.CustomWandbCallback] if training_args.do_train else None,
+        callbacks=[models.CustomWandbCallback] if training_args.do_train and training_args.report_to == "wandb" else None,
     )
 
     # Training
