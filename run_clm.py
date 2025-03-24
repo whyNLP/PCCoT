@@ -589,12 +589,16 @@ def main():
                 # Depending on the model and config, logits may contain extra tensors,
                 # like past_key_values, but logits always come first
                 logits = logits[0]
-            return logits.argmax(dim=-1)
+            ccot_logits, cot_logits = logits
+            return ccot_logits.argmax(dim=-1), cot_logits.argmax(dim=-1)
+            # return logits.argmax(dim=-1)
 
         metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
 
         def compute_metrics(eval_preds):
-            preds, (labels, _) = eval_preds
+            (preds, cot_preds), (labels, _) = eval_preds
+
+            # ccot preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
             labels = labels[:, 1:]
@@ -614,13 +618,50 @@ def main():
             decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
+            logger.info("CCoT Results")
             for i, pred, label in zip(range(10), decoded_preds, decoded_labels):
                 logger.info(f"pred  {i}: {pred}")
                 logger.info(f"label {i}: {label}")
-            return metric.compute(predictions=decoded_preds, references=decoded_labels)
+
+            ccot_result = metric.compute(predictions=decoded_preds, references=decoded_labels)
+
+            # cot preds
+            cot_preds[cot_preds == -100] = tokenizer.pad_token_id
+            cot_preds = [ignore_after_eos(cot_pred) for cot_pred in cot_preds]
+            decoded_cot_preds = tokenizer.batch_decode(cot_preds, skip_special_tokens=True)
+            decoded_cot_preds = [
+                # only keep the string after pcot_args.answer_prompt
+                pred[pred.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in pred else pred
+                for pred in decoded_cot_preds
+            ]
+            decoded_cot_labels = [
+                # only keep the string after pcot_args.answer_prompt
+                label[label.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in label else label
+                for label in decoded_labels
+            ]
+
+            logger.info("CoT Results")
+            for i, pred, label in zip(range(10), decoded_cot_preds, decoded_cot_labels):
+                logger.info(f"pred  {i}: {pred}")
+                logger.info(f"label {i}: {label}")
+
+            cot_result = metric.compute(predictions=decoded_cot_preds, references=decoded_cot_labels)
+
+            return {
+                "ccot_exact_match": ccot_result["exact_match"],
+                "cot_exact_match": cot_result["exact_match"],
+            }
     
     model.pcot_args = pcot_args
     pcot_args.save(training_args.output_dir)
+
+    # from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+    # peft_config = LoraConfig(
+    #     inference_mode=False, r=128, lora_alpha=32, lora_dropout=0.1,
+    #     target_modules=["q_proj", "v_proj"]
+    # )
+    # model.model = get_peft_model(model.model, peft_config)
+    # model.model.print_trainable_parameters()
 
     # Initialize our Trainer
     trainer = Trainer(

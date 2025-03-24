@@ -26,12 +26,13 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        hidden_dim = config.hidden_size
-        self.prj = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
+        # hidden_dim = config.hidden_size
+        # self.prj = nn.Sequential(
+        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.GELU(),
+        #     nn.Linear(hidden_dim, hidden_dim),
+        # )
+        self.prj = lambda x: x
 
         self.pcot_args: PCoTArguments = None
         self._log_cache: Dict[str, Any] = {}
@@ -197,6 +198,11 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states, reduction="none").reshape(self.config.num_hidden_layers, -1) # (num_layers, batch_size * hidden_size)
         kd_loss /= teacher_hidden_states.reshape(self.config.num_hidden_layers, -1).std(dim=-1, keepdim=True)
         kd_loss = kd_loss.mean()
+
+        # kd_loss = F.mse_loss(student_hidden_states, teacher_hidden_states, reduction="none")
+        # kd_loss /= teacher_hidden_states.std(dim=-1, keepdim=True).pow(2)
+        # kd_loss = kd_loss.mean()
+
         loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
 
         # log cache
@@ -205,13 +211,15 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         self._log_cache["kd_loss"] = kd_loss.item()
         self._log_cache["teacher_std"] = teacher_hidden_states.std().item()
 
+        logits_tuple = (answer_logits, logits)
+
         if not return_dict:
-            output = (answer_logits,) + outputs[1:]
+            output = (logits_tuple,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
             loss=loss,
-            logits=answer_logits,
+            logits=logits_tuple,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
