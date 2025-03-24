@@ -59,7 +59,7 @@ class COTDataProcessor:
             question
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
-            + answer
+            + answer[1:]  # Removing the first empty token
             + [self.tokenizer.eos_token_id]
             for question, steps, answer in zip(
                 examples["question"], examples["steps"], examples["answer"]
@@ -69,7 +69,7 @@ class COTDataProcessor:
             [self.pcot_args.label_pad_token_id] * len(question)
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
-            + answer
+            + answer[1:]  # Removing the first empty token
             + [self.tokenizer.eos_token_id]
             for question, steps, answer in zip(
                 examples["question"], examples["steps"], examples["answer"]
@@ -85,7 +85,7 @@ class COTDataProcessor:
             + [self.pcot_args.latent_token_id] * self.pcot_args.num_latent_tokens
             + [self.pcot_args.eot_token_id]
             + self.tokenized_answer_prompt
-            + answer
+            + answer[1:]  # Removing the first empty token
             + [self.tokenizer.eos_token_id]
             for answer in examples["answer"]
         ]
