@@ -10,6 +10,7 @@ from torch.nn import CrossEntropyLoss
 
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
+from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 from .configuration_llama import PCoTLlamaConfig
@@ -26,13 +27,24 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        # hidden_dim = config.hidden_size
-        # self.prj = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
-        #     nn.GELU(),
-        #     nn.Linear(hidden_dim, hidden_dim),
-        # )
-        self.prj = lambda x: x
+        if config.use_projection:
+            hidden_dim = config.hidden_size
+            self.prj = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+            )
+        else:
+            self.prj = lambda x: x
+
+        if config.use_peft:
+            peft_config = LoraConfig(
+                inference_mode=False, r=config.lora_r, lora_alpha=config.lora_alpha, lora_dropout=config.lora_dropout,
+                target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            )
+            self.model = get_peft_model(self.model, peft_config)
+            self.model.print_trainable_parameters()
 
         self.pcot_args: PCoTArguments = None
         self._log_cache: Dict[str, Any] = {}
@@ -190,20 +202,10 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         teacher_hidden_states = teacher_hidden_states.gather(2, cot_kd_indices[:, None, None, None].expand(-1, self.config.num_hidden_layers, -1, self.config.hidden_size))
         student_hidden_states = torch.stack(answer_outputs.hidden_states, dim=1)[:, 1:, ccot_kd_index:ccot_kd_index+1]
 
-        # transpose to (num_layers, batch_size, hidden_size)
-        teacher_hidden_states = teacher_hidden_states.transpose(0, 1).squeeze(2)
-        student_hidden_states = student_hidden_states.transpose(0, 1).squeeze(2)
+        kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states)
+        kd_loss /= teacher_hidden_states.std()
 
-        # calculate the loss
-        kd_loss = F.smooth_l1_loss(student_hidden_states, teacher_hidden_states, reduction="none").reshape(self.config.num_hidden_layers, -1) # (num_layers, batch_size * hidden_size)
-        kd_loss /= teacher_hidden_states.reshape(self.config.num_hidden_layers, -1).std(dim=-1, keepdim=True)
-        kd_loss = kd_loss.mean()
-
-        # kd_loss = F.mse_loss(student_hidden_states, teacher_hidden_states, reduction="none")
-        # kd_loss /= teacher_hidden_states.std(dim=-1, keepdim=True).pow(2)
-        # kd_loss = kd_loss.mean()
-
-        loss = cot_loss * self.pcot_args.loss_alpha + ccot_loss * self.pcot_args.loss_beta + kd_loss * self.pcot_args.loss_gamma
+        loss = cot_loss * self.config.loss_alpha + ccot_loss * self.config.loss_beta + kd_loss * self.config.loss_gamma
 
         # log cache
         self._log_cache["cot_loss"] = cot_loss.item()

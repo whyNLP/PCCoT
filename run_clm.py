@@ -655,14 +655,6 @@ def main():
     model.pcot_args = pcot_args
     pcot_args.save(training_args.output_dir)
 
-    # from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
-    # peft_config = LoraConfig(
-    #     inference_mode=False, r=128, lora_alpha=32, lora_dropout=0.1,
-    #     target_modules=["q_proj", "v_proj"]
-    # )
-    # model.model = get_peft_model(model.model, peft_config)
-    # model.model.print_trainable_parameters()
-
     # Initialize our Trainer
     trainer = Trainer(
         model=model,

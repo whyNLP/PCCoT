@@ -39,20 +39,6 @@ class PCoTArguments:
         metadata={"help": "The number of iterations to use in the PCoT model."}
     )
 
-    # Model specific arguments
-    loss_alpha: float = field(
-        default=1.0,
-        metadata={"help": "The weight to use for the CoT loss."}
-    )
-    loss_beta: float = field(
-        default=1.0,
-        metadata={"help": "The weight to use for the CCoT loss."}
-    )
-    loss_gamma: float = field(
-        default=1.0,
-        metadata={"help": "The weight to use for the KD loss."}
-    )
-
     
     def save(self, output_dir: Path):
         """ Save the arguments to a json file """
