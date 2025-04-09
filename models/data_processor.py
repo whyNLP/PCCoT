@@ -1,6 +1,52 @@
-from transformers import PreTrainedTokenizer
-from .pcot_arguments import PCoTArguments
+from typing import List
 import torch
+
+from transformers import PreTrainedTokenizer
+from transformers.utils import (
+    is_sentencepiece_available,
+    is_tokenizers_available,
+)
+from .pcot_arguments import PCoTArguments
+
+
+def is_llama_tokenizer(tokenizer: PreTrainedTokenizer) -> bool:
+    """Returns whether the tokenizer is a Llama tokenizer."""
+    if is_sentencepiece_available():
+        from transformers.models.llama import LlamaTokenizer
+        if isinstance(tokenizer, LlamaTokenizer):
+            return True
+    
+    if is_tokenizers_available():
+        from transformers.models.llama import LlamaTokenizerFast
+        if isinstance(tokenizer, LlamaTokenizerFast):
+            return True
+
+    return False
+
+
+def batch_tokenize_number(tokenizer: PreTrainedTokenizer, number_texts: List[str]) -> list:
+    """
+    Tokenizes the number string into a list of tokens.
+
+    This function is designed to handle the special case of the Llama tokenizer. The Llama tokenizer will
+    add a space before the number token if the number is the first token in the sequence. This function
+    will remove the space token if it is present.
+    """
+    input_ids = tokenizer(
+        number_texts,
+        return_attention_mask=False,
+        add_special_tokens=False,
+    )["input_ids"]
+
+    if is_llama_tokenizer(tokenizer):
+        # possibly extract the space token
+        tokenized_1 = tokenizer.tokenize("123")
+        tokenized_2 = tokenizer.tokenize("82435")
+        if tokenized_1[0] == tokenized_2[0]:
+            space_token_id = tokenizer.convert_tokens_to_ids(tokenized_1[0])
+            input_ids = [tokens[1:] if tokens[0] == space_token_id else tokens for tokens in input_ids]
+
+    return input_ids
 
 
 class COTDataProcessor:
@@ -39,11 +85,7 @@ class COTDataProcessor:
                 if len(steps) > 1 else []
                 for steps in examples["steps"]
             ],
-            "answer": self.tokenizer(
-                examples["answer"],
-                return_attention_mask=False,
-                add_special_tokens=False,
-            )["input_ids"],
+            "answer": batch_tokenize_number(self.tokenizer, examples["answer"]),
         }
         return output
 
@@ -59,7 +101,7 @@ class COTDataProcessor:
             question
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
-            + answer[1:]  # Removing the first empty token
+            + answer
             + [self.tokenizer.eos_token_id]
             for question, steps, answer in zip(
                 examples["question"], examples["steps"], examples["answer"]
@@ -69,7 +111,7 @@ class COTDataProcessor:
             [self.pcot_args.label_pad_token_id] * len(question)
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
-            + answer[1:]  # Removing the first empty token
+            + answer
             + [self.tokenizer.eos_token_id]
             for question, steps, answer in zip(
                 examples["question"], examples["steps"], examples["answer"]
@@ -85,7 +127,7 @@ class COTDataProcessor:
             + [self.pcot_args.latent_token_id] * self.pcot_args.num_latent_tokens
             + [self.pcot_args.eot_token_id]
             + self.tokenized_answer_prompt
-            + answer[1:]  # Removing the first empty token
+            + answer
             + [self.tokenizer.eos_token_id]
             for answer in examples["answer"]
         ]
