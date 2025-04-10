@@ -660,7 +660,7 @@ def main():
         peft_config = LoraConfig(
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
             target_modules=pcot_args.lora_target_modules.split("-"),
-            modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.modules_to_save else None,
+            modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
