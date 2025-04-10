@@ -39,6 +39,23 @@ class PCoTArguments:
         metadata={"help": "The number of iterations to use in the PCoT model."}
     )
 
+    # PEFT arguments
+    use_peft: bool = field(
+        default=True,
+        metadata={"help": "Whether to use the PEFT strategy."}
+    )
+    lora_r: int = field(
+        default=128,
+        metadata={"help": "The rank of the LoRA matrix."}
+    )
+    lora_alpha: int = field(
+        default=32,
+        metadata={"help": "The weight to use for the LoRA loss."}
+    )
+    lora_dropout: float = field(
+        default=0.1,
+        metadata={"help": "The dropout to use in the LoRA matrix."}
+    )
     
     def save(self, output_dir: Path):
         """ Save the arguments to a json file """

@@ -10,7 +10,6 @@ from torch.nn import CrossEntropyLoss
 
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 from .configuration_llama import PCoTLlamaConfig
@@ -37,14 +36,6 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             )
         else:
             self.prj = lambda x: x
-
-        if config.use_peft:
-            peft_config = LoraConfig(
-                inference_mode=False, r=config.lora_r, lora_alpha=config.lora_alpha, lora_dropout=config.lora_dropout,
-                target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-            )
-            self.model = get_peft_model(self.model, peft_config)
-            self.model.print_trainable_parameters()
 
         self.pcot_args: PCoTArguments = None
         self._log_cache: Dict[str, Any] = {}

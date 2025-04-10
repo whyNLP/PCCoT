@@ -52,6 +52,7 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 
 import models
 
@@ -654,6 +655,14 @@ def main():
     
     model.pcot_args = pcot_args
     pcot_args.save(training_args.output_dir)
+
+    if pcot_args.use_peft:
+        peft_config = LoraConfig(
+            inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        )
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
 
     # Initialize our Trainer
     trainer = Trainer(
