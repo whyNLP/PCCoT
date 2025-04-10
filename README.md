@@ -7,7 +7,9 @@ General starter code for creative model architecture with huggingface transforme
 Change the cuda version if it is not compatible. Developped with python 3.12.4.
 
 ```bash
-conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
+conda install pytorch=2.5.1 pytorch-cuda=12.1 -c pytorch -c nvidia
+conda install mkl=2022.1.0
+pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
 pip install -r requirements.txt
 ```
 
