@@ -659,7 +659,8 @@ def main():
     if pcot_args.use_peft:
         peft_config = LoraConfig(
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
-            target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=pcot_args.lora_target_modules.split("-"),
+            modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.modules_to_save else None,
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()

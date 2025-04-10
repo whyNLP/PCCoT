@@ -56,7 +56,15 @@ class PCoTArguments:
         default=0.1,
         metadata={"help": "The dropout to use in the LoRA matrix."}
     )
-    
+    lora_target_modules: str = field(
+        default="q_proj-k_proj-v_proj-o_proj-down_proj-up_proj-gate_proj",
+        metadata={"help": "hyphen separated list of target modules to apply LoRA layers to"},
+    )
+    lora_modules_to_save: str = field(
+        default="lm_head",
+        metadata={"help": "hyphen separated list of modules apart from adapter layers to be set as trainable and saved in the final checkpoint."},
+    )
+
     def save(self, output_dir: Path):
         """ Save the arguments to a json file """
         output_dir = Path(output_dir)
