@@ -61,7 +61,7 @@ class PCoTArguments:
         metadata={"help": "hyphen separated list of target modules to apply LoRA layers to"},
     )
     lora_modules_to_save: str = field(
-        default="lm_head",
+        default="",
         metadata={"help": "hyphen separated list of modules apart from adapter layers to be set as trainable and saved in the final checkpoint."},
     )
 

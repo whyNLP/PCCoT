@@ -658,9 +658,11 @@ def main():
 
     if pcot_args.use_peft:
         peft_config = LoraConfig(
+            task_type='CAUSAL_LM',
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
             target_modules=pcot_args.lora_target_modules.split("-"),
             modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
+            fan_in_fan_out="gpt2" in config.model_type,
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()

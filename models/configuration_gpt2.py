@@ -28,6 +28,7 @@ class PCoTGPT2Config(GPT2Config):
         loss_alpha=1.0,
         loss_beta=1.0,
         loss_gamma=1.0,
+        use_layerwise_std=False,
         use_projection=False,
         **kwargs
     ):
@@ -41,6 +42,8 @@ class PCoTGPT2Config(GPT2Config):
                 The weight to use for the CCoT loss.
             loss_gamma (`float`, *optional*, defaults to 1.0):
                 The weight to use for the KD loss.
+            use_layerwise_std (`bool`, *optional*, defaults to False):
+                Whether to use layerwise standard deviation for the KD loss.
         
         Projection Arguments:
             use_projection (`bool`, *optional*, defaults to False):
@@ -50,4 +53,5 @@ class PCoTGPT2Config(GPT2Config):
         self.loss_alpha = loss_alpha
         self.loss_beta = loss_beta
         self.loss_gamma = loss_gamma
+        self.use_layerwise_std = use_layerwise_std
         self.use_projection = use_projection
