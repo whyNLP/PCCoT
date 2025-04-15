@@ -657,7 +657,7 @@ def main():
 
     if pcot_args.use_peft:
         peft_config = LoraConfig(
-            task_type='CAUSAL_LM',
+            task_type=TaskType.CAUSAL_LM,
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
             target_modules=pcot_args.lora_target_modules.split("-"),
             modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
