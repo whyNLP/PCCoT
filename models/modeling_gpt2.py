@@ -149,7 +149,7 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         ]
 
         # iteratively predict the latent tokens
-        for _ in range(self.pcot_args.num_iterations):
+        for _ in range(self.config.num_iterations):
             # manually duplicate the past_key_values
             ccot_past_key_values = ccot_outputs.past_key_values[:]
             # update the ccot_outputs

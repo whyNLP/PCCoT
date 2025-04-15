@@ -147,7 +147,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :, :question_boundary]
 
         # iteratively predict the latent tokens
-        for _ in range(self.pcot_args.num_iterations):
+        for _ in range(self.config.num_iterations):
             # manually duplicate the past_key_values
             ccot_past_key_values = DynamicCache()
             ccot_past_key_values.key_cache = ccot_outputs.past_key_values.key_cache[:]

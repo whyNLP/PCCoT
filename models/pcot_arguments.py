@@ -34,10 +34,6 @@ class PCoTArguments:
         default=6,
         metadata={"help": "The number of latent tokens to use in the PCoT model."}
     )
-    num_iterations: int = field(
-        default=6,
-        metadata={"help": "The number of iterations to use in the PCoT model."}
-    )
 
     # PEFT arguments
     use_peft: bool = field(

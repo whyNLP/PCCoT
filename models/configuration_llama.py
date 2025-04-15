@@ -30,6 +30,7 @@ class PCoTLlamaConfig(LlamaConfig):
         loss_gamma=1.0,
         use_layerwise_std=False,
         use_projection=False,
+        num_iterations=6,
         **kwargs
     ):
         """
@@ -48,6 +49,10 @@ class PCoTLlamaConfig(LlamaConfig):
         Projection Arguments:
             use_projection (`bool`, *optional*, defaults to False):
                 Whether to use the projection head for the ccot process.
+        
+        CoT Arguments:
+            num_iterations (`int`, *optional*, defaults to 6):
+                The number of iterations to use in the PCoT model.
         """
         super().__init__(**kwargs)
         self.loss_alpha = loss_alpha
@@ -55,3 +60,4 @@ class PCoTLlamaConfig(LlamaConfig):
         self.loss_gamma = loss_gamma
         self.use_layerwise_std = use_layerwise_std
         self.use_projection = use_projection
+        self.num_iterations = num_iterations
