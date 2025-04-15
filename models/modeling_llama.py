@@ -13,7 +13,6 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 from .configuration_llama import PCoTLlamaConfig
-from .pcot_arguments import PCoTArguments
 
 
 class PCoTLlamaForCausalLM(LlamaForCausalLM):
@@ -37,7 +36,6 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         else:
             self.prj = lambda x: x
 
-        self.pcot_args: PCoTArguments = None
         self._log_cache: Dict[str, Any] = {}
 
         # Initialize weights and apply final processing

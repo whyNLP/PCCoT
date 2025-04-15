@@ -652,8 +652,7 @@ def main():
                 "ccot_exact_match": ccot_result["exact_match"],
                 "cot_exact_match": cot_result["exact_match"],
             }
-    
-    model.pcot_args = pcot_args
+
     pcot_args.save(training_args.output_dir)
 
     if pcot_args.use_peft:

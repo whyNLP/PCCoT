@@ -13,7 +13,6 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel, GPT2Model
 from .configuration_gpt2 import PCoTGPT2Config
-from .pcot_arguments import PCoTArguments
 
 
 class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
@@ -41,7 +40,6 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         else:
             self.prj = lambda x: x
 
-        self.pcot_args: PCoTArguments = None
         self._log_cache: Dict[str, Any] = {}
 
         # Initialize weights and apply final processing
