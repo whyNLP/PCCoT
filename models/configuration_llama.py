@@ -28,7 +28,7 @@ class PCoTLlamaConfig(LlamaConfig):
         loss_alpha=1.0,
         loss_beta=1.0,
         loss_gamma=1.0,
-        use_layerwise_std=False,
+        use_layerwise_std=True,
         use_projection=False,
         num_iterations=6,
         **kwargs
@@ -43,8 +43,9 @@ class PCoTLlamaConfig(LlamaConfig):
                 The weight to use for the CCoT loss.
             loss_gamma (`float`, *optional*, defaults to 1.0):
                 The weight to use for the KD loss.
-            use_layerwise_std (`bool`, *optional*, defaults to False):
-                Whether to use layerwise standard deviation for the KD loss.
+            use_layerwise_std (`bool`, *optional*, defaults to True):
+                Whether to use layerwise standard deviation for the KD loss. Experiments
+                show that this does not affect the performance of the model much.
         
         Projection Arguments:
             use_projection (`bool`, *optional*, defaults to False):
