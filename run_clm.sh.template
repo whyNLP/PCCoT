@@ -9,6 +9,7 @@ accelerate launch run_clm.py \
     --num_latent_tokens 6 \
     --train_file data/gsm_train.json \
     --validation_file data/gsm_valid.json \
+    --test_file data/gsm_test.json \
     --label_names labels cot_labels \
     --lora_target_modules c_attn-c_fc-c_proj \
     --lora_modules_to_save "" \
@@ -38,6 +39,6 @@ accelerate launch run_clm.py \
     --logging_steps 50 \
     --load_best_model_at_end True \
     --metric_for_best_model eval_ccot_exact_match \
-    --report_to wandb \
-    --run_name pcot-gpt2-a100-lora-6-6 \
-    --output_dir outputs/pcot-gpt2-a100-lora-6-6
+    --report_to none \
+    --run_name pcot-gpt2-lora-6-6 \
+    --output_dir outputs/pcot-gpt2-lora-6-6

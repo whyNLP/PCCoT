@@ -191,6 +191,10 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
     )
+    test_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "An optional input test data file to evaluate the perplexity on (a text file)."},
+    )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
@@ -250,6 +254,9 @@ class DataTrainingArguments:
             if self.validation_file is not None:
                 extension = self.validation_file.split(".")[-1]
                 assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
+            if self.test_file is not None:
+                extension = self.test_file.split(".")[-1]
+                assert extension in ["csv", "json", "txt"], "`test_file` should be a csv, a json or a txt file."
 
 
 def main():
@@ -357,6 +364,8 @@ def main():
             data_files["train"] = data_args.train_file
         if data_args.validation_file is not None:
             data_files["validation"] = data_args.validation_file
+        if data_args.test_file is not None:
+            data_files["test"] = data_args.test_file
         extension = (
             data_args.train_file.split(".")[-1]
             if data_args.train_file is not None
@@ -653,11 +662,15 @@ def main():
                 "cot_exact_match": cot_result["exact_match"],
             }
 
+    if training_args.do_predict:
+        if "test" not in tokenized_datasets:
+            raise ValueError("--do_predict requires a test dataset")
+        test_dataset = lm_datasets["test"]
+
     pcot_args.save(training_args.output_dir)
 
     if pcot_args.use_peft:
         peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
             target_modules=pcot_args.lora_target_modules.split("-"),
             modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
@@ -718,6 +731,22 @@ def main():
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+    # Evaluation
+    if training_args.do_predict:
+        logger.info("*** Predict ***")
+
+        _, _, metrics = trainer.predict(test_dataset = test_dataset)
+
+        metrics["test_samples"] = len(test_dataset)
+        try:
+            perplexity = math.exp(metrics["test_loss"])
+        except OverflowError:
+            perplexity = float("inf")
+        metrics["test_perplexity"] = perplexity
+
+        trainer.log_metrics("test", metrics)
+        trainer.save_metrics("test", metrics)
 
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
     if data_args.dataset_name is not None:
