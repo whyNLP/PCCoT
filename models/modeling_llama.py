@@ -139,7 +139,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             past_key_values=DynamicCache(),
         )
         last_hidden_state = ccot_outputs[0][:, question_boundary-1:latent_boundary-1]
-        latent_input_embeds = self.prj(last_hidden_state)
+        latent_input_embeds = self.prj(last_hidden_state).to(dtype=last_hidden_state.dtype)
         for l in range(len(ccot_outputs.past_key_values)):
             ccot_outputs.past_key_values.key_cache[l] = ccot_outputs.past_key_values.key_cache[l][:, :, :question_boundary]
             ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :, :question_boundary]
@@ -155,7 +155,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
             # get the last hidden state
             last_hidden_state = latent_outputs[0]
             # project the hidden state
-            projected_hidden_state = self.prj(last_hidden_state)
+            projected_hidden_state = self.prj(last_hidden_state).to(dtype=last_hidden_state.dtype)
             # get the new input_ids
             latent_input_embeds = torch.cat([latent_input_embeds[:, :1], projected_hidden_state[:, :-1]], dim=1)
         
