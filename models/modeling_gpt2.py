@@ -138,7 +138,7 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         )
         last_hidden_state = ccot_outputs[0][:, question_boundary-1:latent_boundary-1]
         latent_input_embeds = self.prj(last_hidden_state)
-        ccot_outputs.past_key_values = [
+        question_past_key_values = [
             (
                 ccot_outputs.past_key_values[l][0][:, :, :question_boundary],
                 ccot_outputs.past_key_values[l][1][:, :, :question_boundary]
@@ -149,11 +149,11 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         # iteratively predict the latent tokens
         for _ in range(self.config.num_iterations):
             # manually duplicate the past_key_values
-            ccot_past_key_values = ccot_outputs.past_key_values[:]
+            ccot_past_key_values = question_past_key_values[:]
             # update the ccot_outputs
-            latent_outputs = self.transformer(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
+            ccot_outputs = self.transformer(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
             # get the last hidden state
-            last_hidden_state = latent_outputs[0]
+            last_hidden_state = ccot_outputs[0]
             # project the hidden state
             projected_hidden_state = self.prj(last_hidden_state)
             # get the new input_ids
@@ -163,7 +163,7 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         answer_outputs = self.transformer(
             input_ids=input_ids[:, latent_boundary:],
             attention_mask=attention_mask,
-            past_key_values=latent_outputs.past_key_values,
+            past_key_values=ccot_outputs.past_key_values,
             output_hidden_states=True,
         )
 

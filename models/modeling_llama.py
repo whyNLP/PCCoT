@@ -140,20 +140,21 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         )
         last_hidden_state = ccot_outputs[0][:, question_boundary-1:latent_boundary-1]
         latent_input_embeds = self.prj(last_hidden_state).to(dtype=last_hidden_state.dtype)
-        for l in range(len(ccot_outputs.past_key_values)):
-            ccot_outputs.past_key_values.key_cache[l] = ccot_outputs.past_key_values.key_cache[l][:, :, :question_boundary]
-            ccot_outputs.past_key_values.value_cache[l] = ccot_outputs.past_key_values.value_cache[l][:, :, :question_boundary]
+        question_past_key_values = DynamicCache()
+        question_past_key_values.key_cache = ccot_outputs.past_key_values.key_cache[:]
+        question_past_key_values.value_cache = ccot_outputs.past_key_values.value_cache[:]
+        question_past_key_values.crop(question_boundary)
 
         # iteratively predict the latent tokens
         for _ in range(self.config.num_iterations):
             # manually duplicate the past_key_values
             ccot_past_key_values = DynamicCache()
-            ccot_past_key_values.key_cache = ccot_outputs.past_key_values.key_cache[:]
-            ccot_past_key_values.value_cache = ccot_outputs.past_key_values.value_cache[:]
+            ccot_past_key_values.key_cache = question_past_key_values.key_cache[:]
+            ccot_past_key_values.value_cache = question_past_key_values.value_cache[:]
             # update the ccot_outputs
-            latent_outputs = self.model(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
+            ccot_outputs = self.model(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
             # get the last hidden state
-            last_hidden_state = latent_outputs[0]
+            last_hidden_state = ccot_outputs[0]
             # project the hidden state
             projected_hidden_state = self.prj(last_hidden_state).to(dtype=last_hidden_state.dtype)
             # get the new input_ids
@@ -163,7 +164,7 @@ class PCoTLlamaForCausalLM(LlamaForCausalLM):
         answer_outputs = self.model(
             input_ids=input_ids[:, latent_boundary:],
             attention_mask=attention_mask,
-            past_key_values=latent_outputs.past_key_values,
+            past_key_values=ccot_outputs.past_key_values,
             output_hidden_states=True,
         )
 
