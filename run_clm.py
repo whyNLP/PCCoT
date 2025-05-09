@@ -669,10 +669,15 @@ def main():
 
     pcot_args.save(training_args.output_dir)
 
+    is_gpt2 = "gpt2" in config.model_type
+    embedding_layer_name = "wte" if is_gpt2 else "embed_tokens"
+    special_token_ids = [pcot_args.bot_token_id, pcot_args.eot_token_id, pcot_args.latent_token_id, tokenizer.pad_token_id, tokenizer.eos_token_id]
+
     if pcot_args.use_peft:
         peft_config = LoraConfig(
             inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
             target_modules=pcot_args.lora_target_modules.split("-"),
+            trainable_token_indices={embedding_layer_name: special_token_ids},
             modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
             fan_in_fan_out="gpt2" in config.model_type,
         )
