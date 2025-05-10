@@ -129,11 +129,17 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
 
         ## Part 2. student CoT
             
+        # GPT-2 use absolute position embedding, and the implementation of huggingface is not compatible with the attention mask
+        # So we need to manually calculate the position ids
+        position_ids = attention_mask.cumsum(dim=-1) - 1
+        position_ids = position_ids.masked_fill(attention_mask == 0, 0)
+            
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         question_boundary, latent_boundary, ccot_kd_index = key_indices
         ccot_outputs = self.transformer(
             input_ids=input_ids[:, :latent_boundary],
             attention_mask=attention_mask[:, :latent_boundary],
+            position_ids=position_ids[:, :latent_boundary],
             past_key_values=None,
         )
         last_hidden_state = ccot_outputs[0][:, question_boundary-1:latent_boundary-1]
@@ -151,7 +157,11 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
             # manually duplicate the past_key_values
             ccot_past_key_values = question_past_key_values[:]
             # update the ccot_outputs
-            ccot_outputs = self.transformer(inputs_embeds=latent_input_embeds, past_key_values=ccot_past_key_values)
+            ccot_outputs = self.transformer(
+                inputs_embeds=latent_input_embeds,
+                past_key_values=ccot_past_key_values,
+                position_ids=position_ids[:, question_boundary:latent_boundary]
+            )
             # get the last hidden state
             last_hidden_state = ccot_outputs[0]
             # project the hidden state
@@ -163,6 +173,7 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         answer_outputs = self.transformer(
             input_ids=input_ids[:, latent_boundary:],
             attention_mask=attention_mask,
+            position_ids=position_ids[:, latent_boundary:],
             past_key_values=ccot_outputs.past_key_values,
             output_hidden_states=True,
         )
