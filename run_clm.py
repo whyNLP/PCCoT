@@ -615,13 +615,16 @@ def main():
             preds = preds[:, :-1]
             labels[labels == -100] = tokenizer.pad_token_id
             preds[preds == -100] = tokenizer.pad_token_id
-
-            # XXX: I have to declare this function otherwise it will throw an error. why?
-            def tolist(tensor):
-                return tensor.tolist()
-
-            preds = [tolist(pred) for pred in preds]
-            labels = [tolist(label) for label in labels]
+            preds[labels == -100] = tokenizer.pad_token_id
+            
+            # ignore tokens after eos_token_id
+            def ignore_after_eos(tokens):
+                tokens = tokens.tolist()
+                if tokenizer.eos_token_id in tokens:
+                    tokens = tokens[:tokens.index(tokenizer.eos_token_id)]
+                return tokens
+            preds = [ignore_after_eos(pred) for pred in preds]
+            labels = [ignore_after_eos(label) for label in labels]
 
             decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
@@ -635,7 +638,8 @@ def main():
 
             # cot preds
             cot_preds[cot_preds == -100] = tokenizer.pad_token_id
-            cot_preds = [pred.tolist() for pred in cot_preds]
+            cot_preds[cot_labels == -100] = tokenizer.pad_token_id
+            cot_preds = [ignore_after_eos(pred) for pred in cot_preds]
             decoded_cot_preds = tokenizer.batch_decode(cot_preds, skip_special_tokens=True)
             decoded_cot_preds = [
                 # only keep the string after pcot_args.answer_prompt
