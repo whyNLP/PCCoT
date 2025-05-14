@@ -233,7 +233,7 @@ class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits_tuple,
-            past_key_values=outputs.past_key_values,
+            past_key_values=answer_outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
