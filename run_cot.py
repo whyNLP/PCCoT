@@ -26,6 +26,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from itertools import chain
 from typing import Optional
 
@@ -52,7 +53,8 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel
+from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel, AutoPeftModel
+from peft.utils import CONFIG_NAME as PEFT_CONFIG_NAME
 
 import models
 
@@ -571,18 +573,38 @@ def main():
             if model_args.torch_dtype in ["auto", None]
             else getattr(torch, model_args.torch_dtype)
         )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-            torch_dtype=torch_dtype,
-            low_cpu_mem_usage=model_args.low_cpu_mem_usage,
-            attn_implementation=model_args.attn_implementation,
-        )
+
+        # check whether we should load with AutoModelForCausalLM or AutoPeftModel
+        if (Path(model_args.model_name_or_path) / PEFT_CONFIG_NAME).exists():
+            model = AutoPeftModel.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                token=model_args.token,
+                trust_remote_code=model_args.trust_remote_code,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=model_args.low_cpu_mem_usage,
+                attn_implementation=model_args.attn_implementation
+            )
+
+            # we have to override the model config after loading the model, peft does not provide interface to
+            # load base model with custom config with AutoPeftModel.
+            model.base_model.model.config = config
+
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                token=model_args.token,
+                trust_remote_code=model_args.trust_remote_code,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=model_args.low_cpu_mem_usage,
+                attn_implementation=model_args.attn_implementation,
+            )
     else:
         model = AutoModelForCausalLM.from_config(
             config,
@@ -790,6 +812,10 @@ def main():
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
+
+        # if this is a peft model, we need to manually save the config
+        if isinstance(model, PeftModel):
+            trainer.model.config.save_pretrained(training_args.output_dir)
 
         metrics = train_result.metrics
 
