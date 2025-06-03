@@ -1,0 +1,44 @@
+#!/bin/bash
+echo "Start running..."
+export HF_ENDPOINT=https://hf-mirror.com
+export WANDB_PROJECT=coconut
+
+accelerate launch test_ccot.py \
+    --model_name_or_path outputs/pcot-gpt2-h800-3-24-seed0 \
+    --config_overrides num_iterations=3,use_layerwise_std=true \
+    --num_latent_tokens 24 \
+    --train_file data/gsm_train.json \
+    --validation_file data/gsm_valid.json \
+    --test_file data/gsm_test.json \
+    --label_names labels \
+    --lora_target_modules c_attn-c_fc-c_proj \
+    --lora_modules_to_save "" \
+    --remove_unused_columns false \
+    --per_device_train_batch_size 64 \
+    --per_device_eval_batch_size 64 \
+    --auto_find_batch_size \
+    --gradient_accumulation_steps 1 \
+    --block_size 1024 \
+    --attn_implementation flash_attention_2 \
+    --use_liger_kernel \
+    --lr_scheduler_type cosine \
+    --warmup_ratio 0.03 \
+    --learning_rate 3e-3 \
+    --weight_decay 1e-2 \
+    --bf16 \
+    --torch_dtype bfloat16 \
+    --do_eval \
+    --do_predict \
+    --num_train_epochs 40 \
+    --save_total_limit 1 \
+    --save_strategy steps \
+    --save_steps 20 \
+    --evaluation_strategy steps \
+    --eval_steps 20 \
+    --logging_steps 5 \
+    --load_best_model_at_end True \
+    --metric_for_best_model eval_cot_exact_match \
+    --report_to none \
+    --run_name pcot-gpt2-lora-test \
+    --overwrite_output_dir \
+    --output_dir outputs/pcot-gpt2-lora-test

@@ -753,19 +753,121 @@ def main():
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
+    @torch.no_grad()
+    def eval_ccot(model, split = "test"):
+        from tqdm import tqdm
+        from itertools import batched
+        from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel
+
+        metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
+        preds = []
+        labels = []
+        
+        for batch in tqdm(batched(raw_datasets[split], n=training_args.per_device_eval_batch_size), desc=f"Evaluating {split} set", total=len(raw_datasets[split])//training_args.per_device_eval_batch_size):
+            questions = [item['question'] for item in batch]
+
+            # Tokenization and preprocessing
+            num_examples = len(questions)
+
+            tokenized = data_processor.tokenize_function({
+                "question": questions,
+                "steps": [[]] * num_examples,
+                "answer": [""] * num_examples,
+            })
+
+            grouped = data_processor.group_texts(tokenized)
+            grouped = {**tokenized, **grouped}
+            grouped = [
+                {
+                    k: v[i]
+                    for k, v in grouped.items()
+                }
+                for i in range(len(grouped["question"]))
+            ]
+            collated = data_processor.data_collator(grouped)
+
+            # Move to GPU
+            for k, v in collated.items():
+                if isinstance(v, torch.Tensor):
+                    collated[k] = v.to(model.device)
+            
+            # remove eos
+            collated["input_ids"] = collated["input_ids"][:, :-1]
+            collated["labels"] = collated["labels"][:, :-1]
+            collated["attention_mask"] = collated["attention_mask"][:, :-1]
+
+            # Parallel Continuous CoT
+            outputs = model.forward(**collated)
+            attention_mask = collated["attention_mask"]
+
+            next_token_logits = outputs.logits[0][:, -1:, :]
+            next_token_ids = next_token_logits.argmax(-1)
+            decoded_tokens = next_token_ids
+
+            # Generate the answer tokens
+            for i in range(10):
+                
+                # prepare the inputs for the next token
+                attention_mask = torch.cat([attention_mask, attention_mask[:, -1:]], dim=1)
+                position_ids = attention_mask.cumsum(dim=-1) - 1
+                position_ids = position_ids.masked_fill(attention_mask == 0, 0)[:, -1:]
+
+                # use the original model to get the next token
+                model.base_model.model_parallel = False
+                outputs = GPT2LMHeadModel.forward(
+                    model.base_model,
+                    input_ids=next_token_ids,
+                    past_key_values=outputs.past_key_values,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    use_cache=True,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+
+                next_token_logits = outputs.logits[:, -1:, :]
+
+                # 1) greedily select the next token
+                next_token_ids = next_token_logits.argmax(-1)
+
+                # # 2) or sample from the distribution
+                # top_k = 50
+                # temperature = 0.1
+
+                # probs = torch.softmax(next_token_logits, dim=-1)
+                # probs = probs / temperature
+                # selected_probs, indices = torch.topk(probs, top_k)
+                # probs = torch.zeros_like(probs)
+                # probs.scatter_(-1, indices, selected_probs)
+                # next_token_ids = torch.multinomial(probs.squeeze(1), num_samples=1)
+
+                # register the tokens
+                decoded_tokens = torch.cat([decoded_tokens, next_token_ids], dim=1)
+
+            # Decode the generated tokens
+            def ignore_after_eos(tokens):
+                tokens = tokens.tolist()
+                if tokenizer.eos_token_id in tokens:
+                    tokens = tokens[:tokens.index(tokenizer.eos_token_id)]
+                return tokens
+            
+            answers = tokenizer.batch_decode([ignore_after_eos(decoded) for decoded in decoded_tokens], skip_special_tokens=True)
+            
+            preds.extend(answers)
+            labels.extend([item['answer'] for item in batch])
+        
+        cot_result = metric.compute(predictions=preds, references=labels)
+        return cot_result
+
+
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        metrics = trainer.evaluate()
+        metrics = eval_ccot(trainer.model, split="validation")
 
         max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-        try:
-            perplexity = math.exp(metrics["eval_loss"])
-        except OverflowError:
-            perplexity = float("inf")
-        metrics["eval_perplexity"] = perplexity
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
@@ -774,14 +876,9 @@ def main():
     if training_args.do_predict:
         logger.info("*** Predict ***")
 
-        _, _, metrics = trainer.predict(test_dataset = test_dataset)
+        metrics = eval_ccot(trainer.model, split="test")
 
         metrics["test_samples"] = len(test_dataset)
-        try:
-            perplexity = math.exp(metrics["test_loss"])
-        except OverflowError:
-            perplexity = float("inf")
-        metrics["test_perplexity"] = perplexity
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)

@@ -71,6 +71,106 @@ MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 
+class COTDataProcessor:
+    """
+    Data processor for the COT model.
+
+    Example:
+    {"question": "Janets ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?", "steps": ["<<16-3-4=9>>", "<<9*2=18>>"], "answer": "18"}
+    """
+
+    def __init__(
+        self,
+        tokenizer: models.data_processor.PreTrainedTokenizer,
+        pcot_args: models.data_processor.PCoTArguments,
+        max_seq_length: int = 8192,
+    ) -> None:
+        self.tokenizer = tokenizer
+        self.pcot_args = pcot_args
+        self.max_seq_length = max_seq_length
+
+        self.tokenized_answer_prompt = self.tokenizer.encode(
+            pcot_args.answer_prompt, add_special_tokens=False
+        )
+
+    def tokenize_function(self, examples):
+        output = {
+            "question": self.tokenizer(
+                examples["question"],
+                return_attention_mask=False,
+                add_special_tokens=True,
+            )["input_ids"],
+            "steps": [
+                self.tokenizer(
+                    steps, return_attention_mask=False, add_special_tokens=False
+                )["input_ids"]
+                for steps in examples["steps"]
+            ],
+            "answer": models.data_processor.batch_tokenize_number(self.tokenizer, examples["answer"]),
+        }
+        return output
+
+    def group_texts(self, examples):
+        """
+        We need to build cot sequence and ccot sequence.
+        The cot sequence is built by concatenating the question, steps, and answer.
+        The ccot sequence is built by concatenating the question, latent tokens, and answer.
+        For both the sequences, we need to provide a list of indices to indicate the last token of the answer prompt.
+        """
+        # Building the cot sequence
+        cot_input_ids = [
+            question
+            + [token for step in steps for token in step]
+            + self.tokenized_answer_prompt
+            + answer
+            + [self.tokenizer.eos_token_id]
+            for question, steps, answer in zip(
+                examples["question"], examples["steps"], examples["answer"]
+            )
+        ]
+        cot_labels = [
+            [self.pcot_args.label_pad_token_id] * len(question)
+            + [token for step in steps for token in step]
+            + self.tokenized_answer_prompt
+            + answer
+            + [self.tokenizer.eos_token_id]
+            for question, steps, answer in zip(
+                examples["question"], examples["steps"], examples["answer"]
+            )
+        ]
+        return {
+            "input_ids": cot_input_ids,
+            "labels": cot_labels,
+        }
+
+    def data_collator(self, features):
+        """
+        We need to build cot sequence and ccot sequence, with proper padding.
+        The cot sequence is built by concatenating the question, steps, and answer.
+        The ccot sequence is built by concatenating the question, latent tokens, and answer. Using left padding for the questions.
+        For both the sequences, we need to provide a list of indices to indicate the last token of the answer prompt.
+        """
+        # Padding the question, steps, and answer
+        cot_input_ids = self.tokenizer.pad(
+            {"input_ids": [item['input_ids'] for item in features]},
+            padding=True,
+            return_tensors="pt",
+        )
+        cot_input_ids, attention_mask = cot_input_ids["input_ids"], cot_input_ids["attention_mask"]
+        cot_labels = self.tokenizer.pad(
+            {"input_ids": [item['labels'] for item in features]},
+            padding=True,
+            return_tensors="pt",
+        )["input_ids"]
+        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
+
+        return {
+            "input_ids": cot_input_ids,
+            "labels": cot_labels,
+            "attention_mask": attention_mask,
+        }
+
+
 @dataclass
 class ModelArguments:
     """
@@ -273,12 +373,6 @@ def main():
         model_args, data_args, training_args, pcot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args, pcot_args = parser.parse_args_into_dataclasses()
-
-    # try to load pcot_args from the model_args.model_name_or_path
-    if (Path(model_args.model_name_or_path) / "pcot_args.json").exists():
-        parser = HfArgumentParser(models.PCoTArguments)
-        (pcot_args, ) = parser.parse_json_file(json_file=Path(model_args.model_name_or_path)/"pcot_args.json")
-        logger.warning(f"Loaded PCoT arguments from {model_args.model_name_or_path}/pcot_args.json")
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -559,7 +653,7 @@ def main():
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
-    data_processor = models.COTDataProcessor(
+    data_processor = COTDataProcessor(
         tokenizer=tokenizer,
         pcot_args=pcot_args,
         max_seq_length=block_size,
@@ -627,53 +721,35 @@ def main():
                 # Depending on the model and config, logits may contain extra tensors,
                 # like past_key_values, but logits always come first
                 logits = logits[0]
-            ccot_logits, cot_logits = logits
-            return ccot_logits.argmax(dim=-1), cot_logits.argmax(dim=-1)
-            # return logits.argmax(dim=-1)
+            # ccot_logits, cot_logits = logits
+            # return ccot_logits.argmax(dim=-1), cot_logits.argmax(dim=-1)
+            return logits.argmax(dim=-1)
 
         metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
 
         def compute_metrics(eval_preds):
-            (preds, cot_preds), (labels, cot_labels) = eval_preds
+            preds, labels = eval_preds
 
-            # ccot preds
-            # preds have the same shape as the labels, after the argmax(-1) has been calculated
-            # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, 1:]
-            preds = preds[:, :-1]
-            labels[labels == -100] = tokenizer.pad_token_id
-            preds[preds == -100] = tokenizer.pad_token_id
-            preds[labels == -100] = tokenizer.pad_token_id
-            
             # ignore tokens after eos_token_id
             def ignore_after_eos(tokens):
                 tokens = tokens.tolist()
                 if tokenizer.eos_token_id in tokens:
                     tokens = tokens[:tokens.index(tokenizer.eos_token_id)]
                 return tokens
-            preds = [ignore_after_eos(pred) for pred in preds]
-            labels = [ignore_after_eos(label) for label in labels]
-
-            decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-            logger.info("CCoT Results")
-            for i, pred, label in zip(range(10), decoded_preds, decoded_labels):
-                logger.info(f"pred  {i}: {pred}")
-                logger.info(f"label {i}: {label}")
-
-            ccot_result = metric.compute(predictions=decoded_preds, references=decoded_labels)
 
             # cot preds
-            cot_preds[cot_preds == -100] = tokenizer.pad_token_id
-            cot_preds[cot_labels == -100] = tokenizer.pad_token_id
-            cot_preds = [ignore_after_eos(pred) for pred in cot_preds]
-            decoded_cot_preds = tokenizer.batch_decode(cot_preds, skip_special_tokens=True)
+            preds[preds == -100] = tokenizer.pad_token_id
+            preds[labels == -100] = tokenizer.pad_token_id
+            preds = [ignore_after_eos(pred) for pred in preds]
+            decoded_cot_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_cot_preds = [
                 # only keep the string after pcot_args.answer_prompt
                 pred[pred.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in pred else pred
                 for pred in decoded_cot_preds
             ]
+            labels[labels == -100] = tokenizer.pad_token_id
+            labels = [ignore_after_eos(label) for label in labels]
+            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
             decoded_cot_labels = [
                 # only keep the string after pcot_args.answer_prompt
                 label[label.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in label else label
@@ -688,7 +764,6 @@ def main():
             cot_result = metric.compute(predictions=decoded_cot_preds, references=decoded_cot_labels)
 
             return {
-                "ccot_exact_match": ccot_result["exact_match"],
                 "cot_exact_match": cot_result["exact_match"],
             }
 
@@ -753,19 +828,54 @@ def main():
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
+    def eval_cot(model, split = 'test'):
+        from tqdm import tqdm
+        from itertools import batched
+
+        if not model.generation_config.pad_token_id:
+            model.generation_config.pad_token_id = tokenizer.pad_token_id
+        metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
+        preds = []
+        labels = []
+
+        for batch in tqdm(batched(raw_datasets[split], n=training_args.per_device_eval_batch_size), desc=f"Evaluating {split} set", total=len(raw_datasets[split])//training_args.per_device_eval_batch_size):
+            questions = [item['question'] for item in batch]
+            inputs = tokenizer(questions, padding=True, padding_side='left', add_special_tokens=True, return_tensors="pt").to(model.device)
+
+            # gpt-2 uses absolute positional encoding, so we need to setup the position_ids
+            position_ids = inputs['attention_mask'].cumsum(dim=-1) - 1
+            inputs['position_ids'] = position_ids.masked_fill(inputs['attention_mask'] == 0, 0)
+
+            # 1) greedy decoding
+            outputs = model.generate(**inputs, do_sample=False, max_length=1024)
+
+            # # 2) or sampling from the distribution
+            # outputs = model.generate(**inputs, do_sample=True, max_length=1024,
+            #     top_k=50,
+            #     temperature=0.1,
+            # )
+
+            decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+            # extract the answer from the decoded text
+            for pred, gold in zip(decoded, batch):
+                if pcot_args.answer_prompt in pred:
+                    pred = pred.split(pcot_args.answer_prompt)[-1]
+                preds.append(pred)
+                labels.append(gold['answer'])
+        
+        cot_result = metric.compute(predictions=preds, references=labels)
+        return cot_result
+
+
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        metrics = trainer.evaluate()
+        metrics = eval_cot(trainer.model, "validation")
 
         max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-        try:
-            perplexity = math.exp(metrics["eval_loss"])
-        except OverflowError:
-            perplexity = float("inf")
-        metrics["eval_perplexity"] = perplexity
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
@@ -774,14 +884,9 @@ def main():
     if training_args.do_predict:
         logger.info("*** Predict ***")
 
-        _, _, metrics = trainer.predict(test_dataset = test_dataset)
+        metrics = eval_cot(trainer.model, "test")
 
         metrics["test_samples"] = len(test_dataset)
-        try:
-            perplexity = math.exp(metrics["test_loss"])
-        except OverflowError:
-            perplexity = float("inf")
-        metrics["test_perplexity"] = perplexity
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
