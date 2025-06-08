@@ -3,22 +3,22 @@ from pathlib import Path
 import json
 
 @dataclass
-class PCoTArguments:
+class PCCoTArguments:
     """
     Arguments pertaining to the discourse transformer model.
     """
     # Tokenizer arguments
     bot_token_id: int = field(
         default=None,
-        metadata={"help": "The pcot-special id of the beginning of sentence token. Please do not set this argument unless you understand the consequences."}
+        metadata={"help": "The pccot-special id of the beginning of sentence token. Please do not set this argument unless you understand the consequences."}
     )
     eot_token_id: int = field(
         default=None,
-        metadata={"help": "The pcot-special id of the end of sentence token. Please do not set this argument unless you understand the consequences."}
+        metadata={"help": "The pccot-special id of the end of sentence token. Please do not set this argument unless you understand the consequences."}
     )
     latent_token_id: int = field(
         default=None,
-        metadata={"help": "The pcot-special id of the sink token. Please do not set this argument unless you understand the consequences."}
+        metadata={"help": "The pccot-special id of the sink token. Please do not set this argument unless you understand the consequences."}
     )
     label_pad_token_id: int = field(
         default=-100,
@@ -32,7 +32,7 @@ class PCoTArguments:
     )
     num_latent_tokens: int = field(
         default=6,
-        metadata={"help": "The number of latent tokens to use in the PCoT model."}
+        metadata={"help": "The number of latent tokens to use in the PCCoT model."}
     )
 
     # PEFT arguments
@@ -65,5 +65,5 @@ class PCoTArguments:
         """ Save the arguments to a json file """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        with open(output_dir / "pcot_args.json", "w") as f:
+        with open(output_dir / "pccot_args.json", "w") as f:
             json.dump(vars(self), f, indent=4)

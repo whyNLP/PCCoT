@@ -6,7 +6,7 @@ from transformers.utils import (
     is_sentencepiece_available,
     is_tokenizers_available,
 )
-from .pcot_arguments import PCoTArguments
+from .pccot_arguments import PCCoTArguments
 
 
 def is_llama_tokenizer(tokenizer: PreTrainedTokenizer) -> bool:
@@ -60,15 +60,15 @@ class COTDataProcessor:
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer,
-        pcot_args: PCoTArguments,
+        pccot_args: PCCoTArguments,
         max_seq_length: int = 8192,
     ) -> None:
         self.tokenizer = tokenizer
-        self.pcot_args = pcot_args
+        self.pccot_args = pccot_args
         self.max_seq_length = max_seq_length
 
         self.tokenized_answer_prompt = self.tokenizer.encode(
-            pcot_args.answer_prompt, add_special_tokens=False
+            pccot_args.answer_prompt, add_special_tokens=False
         )
 
     def tokenize_function(self, examples):
@@ -108,7 +108,7 @@ class COTDataProcessor:
             )
         ]
         cot_labels = [
-            [self.pcot_args.label_pad_token_id] * len(question)
+            [self.pccot_args.label_pad_token_id] * len(question)
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
             + answer
@@ -123,16 +123,16 @@ class COTDataProcessor:
         ]
         # Building the ccot sequence without the question
         ccot_ids_woq = [
-            [self.pcot_args.bot_token_id]
-            + [self.pcot_args.latent_token_id] * self.pcot_args.num_latent_tokens
-            + [self.pcot_args.eot_token_id]
+            [self.pccot_args.bot_token_id]
+            + [self.pccot_args.latent_token_id] * self.pccot_args.num_latent_tokens
+            + [self.pccot_args.eot_token_id]
             + self.tokenized_answer_prompt
             + answer
             + [self.tokenizer.eos_token_id]
             for answer in examples["answer"]
         ]
         ccot_kd_index = [
-            2 + self.pcot_args.num_latent_tokens + len(self.tokenized_answer_prompt) - 1
+            2 + self.pccot_args.num_latent_tokens + len(self.tokenized_answer_prompt) - 1
             for _ in examples["answer"]
         ]
         return {
@@ -162,7 +162,7 @@ class COTDataProcessor:
             padding=True,
             return_tensors="pt",
         )["input_ids"]
-        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
+        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pccot_args.label_pad_token_id
         cot_kd_index = torch.tensor([item['cot_kd_index'] for item in features])
 
         questions = self.tokenizer.pad(
@@ -180,11 +180,11 @@ class COTDataProcessor:
         ccot_ids_woq, ccot_woq_attention_mask = ccot_ids_woq["input_ids"], ccot_ids_woq["attention_mask"]
         ccot_input_ids = torch.cat([questions, ccot_ids_woq], dim=1)
         ccot_attention_mask = torch.cat([question_attention_mask, ccot_woq_attention_mask], dim=1)
-        ccot_labels = ccot_ids_woq[:, 1 + self.pcot_args.num_latent_tokens:] # eot_token and the following tokens
-        ccot_labels[ccot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
+        ccot_labels = ccot_ids_woq[:, 1 + self.pccot_args.num_latent_tokens:] # eot_token and the following tokens
+        ccot_labels[ccot_labels == self.tokenizer.pad_token_id] = self.pccot_args.label_pad_token_id
         ccot_key_indices = [
             questions.size(1) + 1, # question + bot_token
-            questions.size(1) + 1 + self.pcot_args.num_latent_tokens, # question + bot_token + latent_tokens
+            questions.size(1) + 1 + self.pccot_args.num_latent_tokens, # question + bot_token + latent_tokens
             1 + len(self.tokenized_answer_prompt) - 1 # eot_token + answer_prompt
         ]
 

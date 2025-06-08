@@ -9,7 +9,7 @@
     "eos_token_id": 50256,
     "initializer_range": 0.02,
     "layer_norm_epsilon": 1e-05,
-    "model_type": "pcot-gpt2",
+    "model_type": "pccot-gpt2",
     "n_ctx": 1024,
     "n_embd": 768,
     "n_head": 12,

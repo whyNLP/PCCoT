@@ -12,14 +12,14 @@ from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
-from .configuration_llama import PCoTLlamaConfig
+from .configuration_llama import PCCoTLlamaConfig
 
 
-class PCoTLlamaForCausalLM(LlamaForCausalLM):
+class PCCoTLlamaForCausalLM(LlamaForCausalLM):
     
-    config_class = PCoTLlamaConfig
+    config_class = PCCoTLlamaConfig
 
-    def __init__(self, config: PCoTLlamaConfig):
+    def __init__(self, config: PCCoTLlamaConfig):
         super(LlamaForCausalLM, self).__init__(config)
         self.model = LlamaModel(config)
         self.vocab_size = config.vocab_size

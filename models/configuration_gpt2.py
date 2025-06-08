@@ -20,8 +20,8 @@
 """ GPT2 model configuration"""
 from transformers.models.gpt2.configuration_gpt2 import GPT2Config
 
-class PCoTGPT2Config(GPT2Config):
-    model_type = "pcot-gpt2"
+class PCCoTGPT2Config(GPT2Config):
+    model_type = "pccot-gpt2"
 
     def __init__(
         self,
@@ -53,7 +53,7 @@ class PCoTGPT2Config(GPT2Config):
         
         CoT Arguments:
             num_iterations (`int`, *optional*, defaults to 6):
-                The number of iterations to use in the PCoT model.
+                The number of iterations to use in the PCCoT model.
         """
         super().__init__(**kwargs)
         self.loss_alpha = loss_alpha

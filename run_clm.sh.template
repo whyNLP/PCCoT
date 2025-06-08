@@ -4,7 +4,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 accelerate launch run_clm.py \
     --model_name_or_path gpt2 \
-    --config_name configs/pcot_gpt2_small.json \
+    --config_name configs/pccot_gpt2_small.json \
     --config_overrides num_iterations=6 \
     --num_latent_tokens 6 \
     --train_file data/gsm_train.json \

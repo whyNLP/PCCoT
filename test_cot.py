@@ -82,15 +82,15 @@ class COTDataProcessor:
     def __init__(
         self,
         tokenizer: models.data_processor.PreTrainedTokenizer,
-        pcot_args: models.data_processor.PCoTArguments,
+        pccot_args: models.data_processor.PCCoTArguments,
         max_seq_length: int = 8192,
     ) -> None:
         self.tokenizer = tokenizer
-        self.pcot_args = pcot_args
+        self.pccot_args = pccot_args
         self.max_seq_length = max_seq_length
 
         self.tokenized_answer_prompt = self.tokenizer.encode(
-            pcot_args.answer_prompt, add_special_tokens=False
+            pccot_args.answer_prompt, add_special_tokens=False
         )
 
     def tokenize_function(self, examples):
@@ -129,7 +129,7 @@ class COTDataProcessor:
             )
         ]
         cot_labels = [
-            [self.pcot_args.label_pad_token_id] * len(question)
+            [self.pccot_args.label_pad_token_id] * len(question)
             + [token for step in steps for token in step]
             + self.tokenized_answer_prompt
             + answer
@@ -162,7 +162,7 @@ class COTDataProcessor:
             padding=True,
             return_tensors="pt",
         )["input_ids"]
-        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pcot_args.label_pad_token_id
+        cot_labels[cot_labels == self.tokenizer.pad_token_id] = self.pccot_args.label_pad_token_id
 
         return {
             "input_ids": cot_input_ids,
@@ -366,13 +366,13 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, models.PCoTArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, models.PCCoTArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args, pcot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args, pccot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args, pcot_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, pccot_args = parser.parse_args_into_dataclasses()
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -555,12 +555,12 @@ def main():
             tokenizer.add_special_tokens({'additional_special_tokens': (token, )}, replace_additional_special_tokens=False)
         return tokenizer.convert_tokens_to_ids(token)
 
-    if pcot_args.bot_token_id is None:
-        pcot_args.bot_token_id = get_special_token(tokenizer, '<pcot.bot>')
-    if pcot_args.eot_token_id is None:
-        pcot_args.eot_token_id = get_special_token(tokenizer, '<pcot.eot>')
-    if pcot_args.latent_token_id is None:
-        pcot_args.latent_token_id = get_special_token(tokenizer, '<pcot.latent>')
+    if pccot_args.bot_token_id is None:
+        pccot_args.bot_token_id = get_special_token(tokenizer, '<pcot.bot>')
+    if pccot_args.eot_token_id is None:
+        pccot_args.eot_token_id = get_special_token(tokenizer, '<pcot.eot>')
+    if pccot_args.latent_token_id is None:
+        pccot_args.latent_token_id = get_special_token(tokenizer, '<pcot.latent>')
     if tokenizer.pad_token_id is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     if tokenizer.eos_token_id is None:
@@ -655,7 +655,7 @@ def main():
 
     data_processor = COTDataProcessor(
         tokenizer=tokenizer,
-        pcot_args=pcot_args,
+        pccot_args=pccot_args,
         max_seq_length=block_size,
     )
 
@@ -743,16 +743,16 @@ def main():
             preds = [ignore_after_eos(pred) for pred in preds]
             decoded_cot_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
             decoded_cot_preds = [
-                # only keep the string after pcot_args.answer_prompt
-                pred[pred.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in pred else pred
+                # only keep the string after pccot_args.answer_prompt
+                pred[pred.index(pccot_args.answer_prompt) + len(pccot_args.answer_prompt):] if pccot_args.answer_prompt in pred else pred
                 for pred in decoded_cot_preds
             ]
             labels[labels == -100] = tokenizer.pad_token_id
             labels = [ignore_after_eos(label) for label in labels]
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
             decoded_cot_labels = [
-                # only keep the string after pcot_args.answer_prompt
-                label[label.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in label else label
+                # only keep the string after pccot_args.answer_prompt
+                label[label.index(pccot_args.answer_prompt) + len(pccot_args.answer_prompt):] if pccot_args.answer_prompt in label else label
                 for label in decoded_labels
             ]
 
@@ -772,17 +772,17 @@ def main():
             raise ValueError("--do_predict requires a test dataset")
         test_dataset = lm_datasets["test"]
 
-    pcot_args.save(training_args.output_dir)
+    pccot_args.save(training_args.output_dir)
 
-    if pcot_args.use_peft and not isinstance(model, PeftModel):
+    if pccot_args.use_peft and not isinstance(model, PeftModel):
         is_gpt2 = "gpt2" in config.model_type
         embedding_layer_name = "wte" if is_gpt2 else "embed_tokens"
-        special_token_ids = [pcot_args.bot_token_id, pcot_args.eot_token_id, pcot_args.latent_token_id, tokenizer.pad_token_id, tokenizer.eos_token_id]
+        special_token_ids = [pccot_args.bot_token_id, pccot_args.eot_token_id, pccot_args.latent_token_id, tokenizer.pad_token_id, tokenizer.eos_token_id]
         peft_config = LoraConfig(
-            inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
-            target_modules=pcot_args.lora_target_modules.split("-"),
+            inference_mode=False, r=pccot_args.lora_r, lora_alpha=pccot_args.lora_alpha, lora_dropout=pccot_args.lora_dropout,
+            target_modules=pccot_args.lora_target_modules.split("-"),
             trainable_token_indices={embedding_layer_name: special_token_ids},
-            modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
+            modules_to_save=pccot_args.lora_modules_to_save.split("-") if pccot_args.lora_modules_to_save else None,
             fan_in_fan_out=is_gpt2,
         )
         model = get_peft_model(model, peft_config)
@@ -859,8 +859,8 @@ def main():
 
             # extract the answer from the decoded text
             for pred, gold in zip(decoded, batch):
-                if pcot_args.answer_prompt in pred:
-                    pred = pred.split(pcot_args.answer_prompt)[-1]
+                if pccot_args.answer_prompt in pred:
+                    pred = pred.split(pccot_args.answer_prompt)[-1]
                 preds.append(pred)
                 labels.append(gold['answer'])
         

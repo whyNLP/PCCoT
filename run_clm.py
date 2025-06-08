@@ -266,19 +266,19 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, models.PCoTArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, models.PCCoTArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args, pcot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args, pccot_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args, pcot_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, pccot_args = parser.parse_args_into_dataclasses()
 
-    # try to load pcot_args from the model_args.model_name_or_path
-    if (Path(model_args.model_name_or_path) / "pcot_args.json").exists():
-        parser = HfArgumentParser(models.PCoTArguments)
-        (pcot_args, ) = parser.parse_json_file(json_file=Path(model_args.model_name_or_path)/"pcot_args.json")
-        logger.warning(f"Loaded PCoT arguments from {model_args.model_name_or_path}/pcot_args.json")
+    # try to load pccot_args from the model_args.model_name_or_path
+    if (Path(model_args.model_name_or_path) / "pccot_args.json").exists():
+        parser = HfArgumentParser(models.PCCoTArguments)
+        (pccot_args, ) = parser.parse_json_file(json_file=Path(model_args.model_name_or_path)/"pccot_args.json")
+        logger.warning(f"Loaded PCCoT arguments from {model_args.model_name_or_path}/pccot_args.json")
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -461,12 +461,12 @@ def main():
             tokenizer.add_special_tokens({'additional_special_tokens': (token, )}, replace_additional_special_tokens=False)
         return tokenizer.convert_tokens_to_ids(token)
 
-    if pcot_args.bot_token_id is None:
-        pcot_args.bot_token_id = get_special_token(tokenizer, '<pcot.bot>')
-    if pcot_args.eot_token_id is None:
-        pcot_args.eot_token_id = get_special_token(tokenizer, '<pcot.eot>')
-    if pcot_args.latent_token_id is None:
-        pcot_args.latent_token_id = get_special_token(tokenizer, '<pcot.latent>')
+    if pccot_args.bot_token_id is None:
+        pccot_args.bot_token_id = get_special_token(tokenizer, '<pcot.bot>')
+    if pccot_args.eot_token_id is None:
+        pccot_args.eot_token_id = get_special_token(tokenizer, '<pcot.eot>')
+    if pccot_args.latent_token_id is None:
+        pccot_args.latent_token_id = get_special_token(tokenizer, '<pcot.latent>')
     if tokenizer.pad_token_id is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     if tokenizer.eos_token_id is None:
@@ -561,7 +561,7 @@ def main():
 
     data_processor = models.COTDataProcessor(
         tokenizer=tokenizer,
-        pcot_args=pcot_args,
+        pccot_args=pccot_args,
         max_seq_length=block_size,
     )
 
@@ -670,13 +670,13 @@ def main():
             cot_preds = [ignore_after_eos(pred) for pred in cot_preds]
             decoded_cot_preds = tokenizer.batch_decode(cot_preds, skip_special_tokens=True)
             decoded_cot_preds = [
-                # only keep the string after pcot_args.answer_prompt
-                pred[pred.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in pred else pred
+                # only keep the string after pccot_args.answer_prompt
+                pred[pred.index(pccot_args.answer_prompt) + len(pccot_args.answer_prompt):] if pccot_args.answer_prompt in pred else pred
                 for pred in decoded_cot_preds
             ]
             decoded_cot_labels = [
-                # only keep the string after pcot_args.answer_prompt
-                label[label.index(pcot_args.answer_prompt) + len(pcot_args.answer_prompt):] if pcot_args.answer_prompt in label else label
+                # only keep the string after pccot_args.answer_prompt
+                label[label.index(pccot_args.answer_prompt) + len(pccot_args.answer_prompt):] if pccot_args.answer_prompt in label else label
                 for label in decoded_labels
             ]
 
@@ -697,17 +697,17 @@ def main():
             raise ValueError("--do_predict requires a test dataset")
         test_dataset = lm_datasets["test"]
 
-    pcot_args.save(training_args.output_dir)
+    pccot_args.save(training_args.output_dir)
 
-    if pcot_args.use_peft and not isinstance(model, PeftModel):
+    if pccot_args.use_peft and not isinstance(model, PeftModel):
         is_gpt2 = "gpt2" in config.model_type
         embedding_layer_name = "wte" if is_gpt2 else "embed_tokens"
-        special_token_ids = [pcot_args.bot_token_id, pcot_args.eot_token_id, pcot_args.latent_token_id, tokenizer.pad_token_id, tokenizer.eos_token_id]
+        special_token_ids = [pccot_args.bot_token_id, pccot_args.eot_token_id, pccot_args.latent_token_id, tokenizer.pad_token_id, tokenizer.eos_token_id]
         peft_config = LoraConfig(
-            inference_mode=False, r=pcot_args.lora_r, lora_alpha=pcot_args.lora_alpha, lora_dropout=pcot_args.lora_dropout,
-            target_modules=pcot_args.lora_target_modules.split("-"),
+            inference_mode=False, r=pccot_args.lora_r, lora_alpha=pccot_args.lora_alpha, lora_dropout=pccot_args.lora_dropout,
+            target_modules=pccot_args.lora_target_modules.split("-"),
             trainable_token_indices={embedding_layer_name: special_token_ids},
-            modules_to_save=pcot_args.lora_modules_to_save.split("-") if pcot_args.lora_modules_to_save else None,
+            modules_to_save=pccot_args.lora_modules_to_save.split("-") if pccot_args.lora_modules_to_save else None,
             fan_in_fan_out=is_gpt2,
         )
         model = get_peft_model(model, peft_config)

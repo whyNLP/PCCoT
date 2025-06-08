@@ -17,7 +17,7 @@
     "intermediate_size": 8192,
     "max_position_embeddings": 131072,
     "mlp_bias": false,
-    "model_type": "pcot-llama",
+    "model_type": "pccot-llama",
     "num_attention_heads": 32,
     "num_hidden_layers": 16,
     "num_key_value_heads": 8,

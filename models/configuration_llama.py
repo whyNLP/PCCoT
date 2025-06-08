@@ -20,8 +20,8 @@
 """ LLaMA model configuration"""
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-class PCoTLlamaConfig(LlamaConfig):
-    model_type = "pcot-llama"
+class PCCoTLlamaConfig(LlamaConfig):
+    model_type = "pccot-llama"
 
     def __init__(
         self,
@@ -53,7 +53,7 @@ class PCoTLlamaConfig(LlamaConfig):
         
         CoT Arguments:
             num_iterations (`int`, *optional*, defaults to 6):
-                The number of iterations to use in the PCoT model.
+                The number of iterations to use in the PCCoT model.
         """
         super().__init__(**kwargs)
         self.loss_alpha = loss_alpha

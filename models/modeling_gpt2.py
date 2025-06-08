@@ -12,14 +12,14 @@ from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel, GPT2Model
-from .configuration_gpt2 import PCoTGPT2Config
+from .configuration_gpt2 import PCCoTGPT2Config
 
 
-class PCoTGPT2LMHeadModel(GPT2LMHeadModel):
+class PCCoTGPT2LMHeadModel(GPT2LMHeadModel):
     
-    config_class = PCoTGPT2Config
+    config_class = PCCoTGPT2Config
 
-    def __init__(self, config: PCoTGPT2Config):
+    def __init__(self, config: PCCoTGPT2Config):
         super(GPT2LMHeadModel, self).__init__(config)
         self.transformer = GPT2Model(config)
         self.vocab_size = config.vocab_size
