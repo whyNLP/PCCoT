@@ -2,7 +2,7 @@ from .configuration_llama import PCCoTLlamaConfig
 from .modeling_llama import PCCoTLlamaForCausalLM
 from .configuration_gpt2 import PCCoTGPT2Config
 from .modeling_gpt2 import PCCoTGPT2LMHeadModel
-from .pccot_arguments import PCCoTArguments
+from .pccot_arguments import PCCoTArguments, PCCOT_ARGS_NAME
 from .data_processor import COTDataProcessor
 from .wandb_callback import CustomWandbCallback
 from transformers.integrations import INTEGRATION_TO_CALLBACK

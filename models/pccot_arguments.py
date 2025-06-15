@@ -2,6 +2,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import json
 
+
+PCCOT_ARGS_NAME = "pccot_args.json"
+
 @dataclass
 class PCCoTArguments:
     """
@@ -65,5 +68,5 @@ class PCCoTArguments:
         """ Save the arguments to a json file """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        with open(output_dir / "pccot_args.json", "w") as f:
+        with open(output_dir / PCCOT_ARGS_NAME, "w") as f:
             json.dump(vars(self), f, indent=4)

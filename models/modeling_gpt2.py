@@ -26,7 +26,7 @@ class PCCoTGPT2LMHeadModel(GPT2LMHeadModel):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # Model parallel
-        self.transformer_parallel = False
+        self.model_parallel = False
         self.device_map = None
 
         if config.use_projection:
