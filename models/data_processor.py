@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 import torch
 
 from transformers import PreTrainedTokenizer
@@ -198,3 +198,45 @@ class COTDataProcessor:
             "cot_attention_mask": attention_mask,
             "cot_kd_indices": cot_kd_index,
         }
+
+    def process(self, questions: Union[str, List[str]], device: str = "cpu") -> dict:
+        """
+        Process the input questions and return the collated data.
+        This function provides a unified interface for processing a single question or a list of questions,
+        especially useful for inference scenarios where you do not have a dataset.
+        
+        Args:
+            questions (Union[str, List[str]]): A single question or a list of questions.
+        
+        Returns:
+            dict: A dictionary containing the processed data.
+        """
+        if isinstance(questions, str):
+            questions = [questions]
+        
+        num_examples = len(questions)
+        
+        tokenized = self.tokenize_function({
+            "question": questions,
+            "steps": [[]] * num_examples,
+            "answer": [""] * num_examples,
+        })
+        
+        grouped = self.group_texts(tokenized)
+        grouped = {**tokenized, **grouped}
+        grouped = [
+            {
+                k: v[i]
+                for k, v in grouped.items()
+            }
+            for i in range(len(grouped["question"]))
+        ]
+        
+        collated = self.data_collator(grouped)
+
+        # Move to the specified device
+        for k, v in collated.items():
+            if isinstance(v, torch.Tensor):
+                collated[k] = v.to(device)
+
+        return collated

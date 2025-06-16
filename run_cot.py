@@ -51,7 +51,7 @@ from transformers import (
 )
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils import check_min_version, send_example_telemetry, cached_file
 from transformers.utils.versions import require_version
 from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel, AutoPeftModel
 from peft.utils import CONFIG_NAME as PEFT_CONFIG_NAME
@@ -575,7 +575,16 @@ def main():
         )
 
         # check whether we should load with AutoModelForCausalLM or AutoPeftModel
-        if (Path(model_args.model_name_or_path) / PEFT_CONFIG_NAME).exists():
+        if (
+            cached_file(
+                model_args.model_name_or_path,
+                PEFT_CONFIG_NAME,
+                cache_dir=model_args.cache_dir,
+                token=model_args.token,
+                _raise_exceptions_for_missing_entries=False,
+            )
+            is not None
+        ):
             model = AutoPeftModel.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -590,7 +599,7 @@ def main():
 
             # we have to override the model config after loading the model, peft does not provide interface to
             # load base model with custom config with AutoPeftModel.
-            model.base_model.model.config = config
+            model.get_base_model().config = config
 
         else:
             model = AutoModelForCausalLM.from_pretrained(

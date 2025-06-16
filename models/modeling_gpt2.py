@@ -13,9 +13,10 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel, GPT2Model
 from .configuration_gpt2 import PCCoTGPT2Config
+from .generate import PCCoTGenerationMixin
 
 
-class PCCoTGPT2LMHeadModel(GPT2LMHeadModel):
+class PCCoTGPT2LMHeadModel(GPT2LMHeadModel, PCCoTGenerationMixin):
     
     config_class = PCCoTGPT2Config
 

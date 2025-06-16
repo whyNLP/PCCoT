@@ -13,9 +13,10 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaModel
 from .configuration_llama import PCCoTLlamaConfig
+from .generate import PCCoTGenerationMixin
 
 
-class PCCoTLlamaForCausalLM(LlamaForCausalLM):
+class PCCoTLlamaForCausalLM(LlamaForCausalLM, PCCoTGenerationMixin):
     
     config_class = PCCoTLlamaConfig
 

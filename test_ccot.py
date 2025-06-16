@@ -51,7 +51,7 @@ from transformers import (
 )
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils import check_min_version, send_example_telemetry, cached_file
 from transformers.utils.versions import require_version
 from peft import get_peft_config, get_peft_model, LoraConfig, TaskType, PeftModel, AutoPeftModel
 from peft.utils import CONFIG_NAME as PEFT_CONFIG_NAME
@@ -275,10 +275,17 @@ def main():
         model_args, data_args, training_args, pccot_args = parser.parse_args_into_dataclasses()
 
     # try to load pccot_args from the model_args.model_name_or_path
-    if (Path(model_args.model_name_or_path) / "pccot_args.json").exists():
+    cached_pccot_args = cached_file(
+        model_args.model_name_or_path,
+        models.PCCOT_ARGS_NAME,
+        cache_dir=model_args.cache_dir,
+        token=model_args.token,
+        _raise_exceptions_for_missing_entries=False,
+    )
+    if cached_pccot_args is not None:
         parser = HfArgumentParser(models.PCCoTArguments)
-        (pccot_args, ) = parser.parse_json_file(json_file=Path(model_args.model_name_or_path)/"pccot_args.json")
-        logger.warning(f"Loaded PCCoT arguments from {model_args.model_name_or_path}/pccot_args.json")
+        (pccot_args, ) = parser.parse_json_file(json_file=cached_pccot_args)
+        logger.warning(f"Loaded PCCoT arguments from {cached_pccot_args}")
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -481,7 +488,16 @@ def main():
         )
 
         # check whether we should load with AutoModelForCausalLM or AutoPeftModel
-        if (Path(model_args.model_name_or_path) / PEFT_CONFIG_NAME).exists():
+        if (
+            cached_file(
+                model_args.model_name_or_path,
+                PEFT_CONFIG_NAME,
+                cache_dir=model_args.cache_dir,
+                token=model_args.token,
+                _raise_exceptions_for_missing_entries=False,
+            )
+            is not None
+        ):
             model = AutoPeftModel.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -496,7 +512,7 @@ def main():
 
             # we have to override the model config after loading the model, peft does not provide interface to
             # load base model with custom config with AutoPeftModel.
-            model.base_model.model.config = config
+            model.get_base_model().config = config
 
         else:
             model = AutoModelForCausalLM.from_pretrained(
@@ -757,7 +773,6 @@ def main():
     def eval_ccot(model, split = "test"):
         from tqdm import tqdm
         from itertools import batched
-        from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel
 
         metric = evaluate.load("exact_match", cache_dir=model_args.cache_dir)
         preds = []
@@ -765,84 +780,18 @@ def main():
         
         for batch in tqdm(batched(raw_datasets[split], n=training_args.per_device_eval_batch_size), desc=f"Evaluating {split} set", total=len(raw_datasets[split])//training_args.per_device_eval_batch_size):
             questions = [item['question'] for item in batch]
-
-            # Tokenization and preprocessing
-            num_examples = len(questions)
-
-            tokenized = data_processor.tokenize_function({
-                "question": questions,
-                "steps": [[]] * num_examples,
-                "answer": [""] * num_examples,
-            })
-
-            grouped = data_processor.group_texts(tokenized)
-            grouped = {**tokenized, **grouped}
-            grouped = [
-                {
-                    k: v[i]
-                    for k, v in grouped.items()
-                }
-                for i in range(len(grouped["question"]))
-            ]
-            collated = data_processor.data_collator(grouped)
-
-            # Move to GPU
-            for k, v in collated.items():
-                if isinstance(v, torch.Tensor):
-                    collated[k] = v.to(model.device)
+            collated = data_processor.process(questions, device=model.device)
             
             # remove eos
             collated["input_ids"] = collated["input_ids"][:, :-1]
             collated["labels"] = collated["labels"][:, :-1]
             collated["attention_mask"] = collated["attention_mask"][:, :-1]
 
-            # Parallel Continuous CoT
-            outputs = model.forward(**collated)
-            attention_mask = collated["attention_mask"]
-
-            next_token_logits = outputs.logits[0][:, -1:, :]
-            next_token_ids = next_token_logits.argmax(-1)
-            decoded_tokens = next_token_ids
-
-            # Generate the answer tokens
-            for i in range(10):
-                
-                # prepare the inputs for the next token
-                attention_mask = torch.cat([attention_mask, attention_mask[:, -1:]], dim=1)
-                position_ids = attention_mask.cumsum(dim=-1) - 1
-                position_ids = position_ids.masked_fill(attention_mask == 0, 0)[:, -1:]
-
-                # use the original model to get the next token
-                model.base_model.model_parallel = False
-                outputs = GPT2LMHeadModel.forward(
-                    model.base_model,
-                    input_ids=next_token_ids,
-                    past_key_values=outputs.past_key_values,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    use_cache=True,
-                    output_attentions=False,
-                    output_hidden_states=False,
-                )
-
-                next_token_logits = outputs.logits[:, -1:, :]
-
-                # 1) greedily select the next token
-                next_token_ids = next_token_logits.argmax(-1)
-
-                # # 2) or sample from the distribution
-                # top_k = 50
-                # temperature = 0.1
-
-                # probs = torch.softmax(next_token_logits, dim=-1)
-                # probs = probs / temperature
-                # selected_probs, indices = torch.topk(probs, top_k)
-                # probs = torch.zeros_like(probs)
-                # probs.scatter_(-1, indices, selected_probs)
-                # next_token_ids = torch.multinomial(probs.squeeze(1), num_samples=1)
-
-                # register the tokens
-                decoded_tokens = torch.cat([decoded_tokens, next_token_ids], dim=1)
+            decoded_tokens = model.generate(
+                collated=collated,
+                max_new_tokens=10,
+                do_sample=False,
+            )
 
             # Decode the generated tokens
             def ignore_after_eos(tokens):
@@ -851,6 +800,7 @@ def main():
                     tokens = tokens[:tokens.index(tokenizer.eos_token_id)]
                 return tokens
             
+            decoded_tokens = decoded_tokens[:, collated["input_ids"].shape[1]:]  # remove the input_ids part
             answers = tokenizer.batch_decode([ignore_after_eos(decoded) for decoded in decoded_tokens], skip_special_tokens=True)
             
             preds.extend(answers)
