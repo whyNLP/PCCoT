@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from transformers.generation.utils import GenerationMixin, LogitsProcessorList, StoppingCriteriaList, GenerationConfig
+from transformers.generation.configuration_utils import GenerationMode
 
 
 class PCCoTGenerationMixin(GenerationMixin):
@@ -86,6 +87,14 @@ class PCCoTGenerationMixin(GenerationMixin):
             generation_config=generation_config, stopping_criteria=StoppingCriteriaList(), **kwargs
         )
 
+        # validate generation mode
+        generation_mode = generation_config.get_generation_mode()
+        if generation_mode not in (GenerationMode.SAMPLE, GenerationMode.GREEDY_SEARCH):
+            raise ValueError(
+                f"Unsupported generation mode: {generation_mode}. "
+                "Only SAMPLE and GREEDY_SEARCH are supported for PCCoT generation."
+            )
+
         # Move to the same device
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
@@ -157,7 +166,5 @@ class PCCoTGenerationMixin(GenerationMixin):
             unfinished_sequences = unfinished_sequences & ~prepared_stopping_criteria(input_ids, None)
             this_peer_finished = unfinished_sequences.max() == 0
             new_len += 1
-            # print(f"Generated {new_len} tokens so far...")
-            # breakpoint()
 
         return input_ids
