@@ -201,12 +201,13 @@ class COTDataProcessor:
 
     def process(self, questions: Union[str, List[str]], device: str = "cpu") -> dict:
         """
-        Process the input questions and return the collated data.
+        Process the input questions and return the collated data without the answer and eos tokens.
         This function provides a unified interface for processing a single question or a list of questions,
         especially useful for inference scenarios where you do not have a dataset.
         
         Args:
             questions (Union[str, List[str]]): A single question or a list of questions.
+            device (str): The device to which the processed data should be moved (default is "cpu").
         
         Returns:
             dict: A dictionary containing the processed data.
@@ -233,6 +234,11 @@ class COTDataProcessor:
         ]
         
         collated = self.data_collator(grouped)
+
+        # remove eos
+        collated["input_ids"] = collated["input_ids"][:, :-1]
+        collated["labels"] = collated["labels"][:, :-1]
+        collated["attention_mask"] = collated["attention_mask"][:, :-1]
 
         # Move to the specified device
         for k, v in collated.items():
