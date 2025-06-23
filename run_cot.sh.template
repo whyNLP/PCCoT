@@ -1,7 +1,6 @@
 #!/bin/bash
 echo "Start running..."
 export HF_ENDPOINT=https://hf-mirror.com
-export WANDB_PROJECT=coconut
 
 accelerate launch run_cot.py \
     --model_name_or_path gpt2 \
