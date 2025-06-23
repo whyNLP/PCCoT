@@ -5,14 +5,12 @@ export WANDB_PROJECT=coconut
 
 accelerate launch run_cot.py \
     --model_name_or_path gpt2 \
-    --train_file data/gsm_train.json \
-    --validation_file data/gsm_valid.json \
-    --test_file data/gsm_test.json \
+    --dataset_name whynlp/gsm8k-aug \
     --label_names labels \
     --lora_target_modules c_attn-c_fc-c_proj \
     --lora_modules_to_save "" \
     --remove_unused_columns false \
-    --per_device_train_batch_size 64 \
+    --per_device_train_batch_size 128 \
     --per_device_eval_batch_size 32 \
     --auto_find_batch_size \
     --gradient_accumulation_steps 1 \
@@ -31,10 +29,10 @@ accelerate launch run_cot.py \
     --num_train_epochs 40 \
     --save_total_limit 1 \
     --save_strategy steps \
-    --save_steps 20 \
+    --save_steps 200 \
     --evaluation_strategy steps \
-    --eval_steps 20 \
-    --logging_steps 5 \
+    --eval_steps 200 \
+    --logging_steps 50 \
     --load_best_model_at_end True \
     --metric_for_best_model eval_cot_exact_match \
     --report_to none \

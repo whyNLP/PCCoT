@@ -5,11 +5,9 @@ export HF_ENDPOINT=https://hf-mirror.com
 accelerate launch run_ccot.py \
     --model_name_or_path gpt2 \
     --config_name configs/pccot_gpt2_small.json \
-    --config_overrides num_iterations=6 \
-    --num_latent_tokens 6 \
-    --train_file data/gsm_train.json \
-    --validation_file data/gsm_valid.json \
-    --test_file data/gsm_test.json \
+    --config_overrides num_iterations=3 \
+    --num_latent_tokens 24 \
+    --dataset_name whynlp/gsm8k-aug \
     --label_names labels cot_labels \
     --lora_target_modules c_attn-c_fc-c_proj \
     --lora_modules_to_save "" \
@@ -40,5 +38,5 @@ accelerate launch run_ccot.py \
     --load_best_model_at_end True \
     --metric_for_best_model eval_ccot_exact_match \
     --report_to none \
-    --run_name pcot-gpt2-lora-6-6 \
-    --output_dir outputs/pcot-gpt2-lora-6-6
+    --run_name pcot-gpt2-lora-3-24 \
+    --output_dir outputs/pcot-gpt2-lora-3-24
