@@ -2,7 +2,7 @@
 echo "Start running..."
 export HF_ENDPOINT=https://hf-mirror.com
 
-accelerate launch run_clm.py \
+accelerate launch run_ccot.py \
     --model_name_or_path gpt2 \
     --config_name configs/pccot_gpt2_small.json \
     --config_overrides num_iterations=6 \
