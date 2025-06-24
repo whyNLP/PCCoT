@@ -11,7 +11,7 @@
 </p>
 </div>
 
-The code base for project **Parallel Continuous Chain-of-Thought**, parallelizing the continuous chain-of-thought approach with Jacobi iteration. It improves both training and inference efficiency of continuous chain-of-thought, with better performance on reasoning tasks. The paper "Parallel Continuous Chain-of-Thought with Jacobi Iteration" is under review.
+The code base for project **Parallel Continuous Chain-of-Thought**, parallelizing the continuous chain-of-thought approach with Jacobi iteration. It improves both training and inference efficiency of continuous chain-of-thought, with better performance on reasoning tasks. The paper "[Parallel Continuous Chain-of-Thought with Jacobi Iteration](https://arxiv.org/abs/2506.18582)" is under review.
 
 ## Installation
 
