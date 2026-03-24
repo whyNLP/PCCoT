@@ -28,7 +28,14 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-We have released a finetuned GPT-2 model described in our paper on [HuggingFace](https://huggingface.co/whynlp/pccot-gpt2). To run this model, please first clone this repo then execute the following command:
+We have released the finetuned models described in our paper on HuggingFace.
+
+| Model                 | Link                                                                |
+| --------------------- | ------------------------------------------------------------------- |
+| GPT2-Small            | [whynlp/pccot-gpt2](https://huggingface.co/whynlp/pccot-gpt2)       |
+| Llama-3.2-1B-Instruct | [whynlp/pccot-llama1b](https://huggingface.co/whynlp/pccot-llama1b) |
+
+To run this model, please first clone this repo then execute the following command:
 
 ```bash
 python example.py
@@ -73,6 +80,9 @@ bash test_ccot.sh
 It will test the model on the [GSM8K-AUG](https://huggingface.co/datasets/whynlp/gsm8k-aug) dataset. See the script for more details.
 
 To test a standard CoT model, use the `test_cot.sh.template` instead.
+
+> [!WARNING]  
+> There is a known bug on testing llama models with batch size greater than 1. Please set `per_device_eval_batch_size` to 1 when testing llama models.
 
 ### Configuration
 
