@@ -30,10 +30,11 @@ pip install -r requirements.txt
 
 We have released the finetuned models described in our paper on HuggingFace.
 
-| Model                 | Link                                                                |
-| --------------------- | ------------------------------------------------------------------- |
-| GPT2-Small            | [whynlp/pccot-gpt2](https://huggingface.co/whynlp/pccot-gpt2)       |
-| Llama-3.2-1B-Instruct | [whynlp/pccot-llama1b](https://huggingface.co/whynlp/pccot-llama1b) |
+| Model                 | Dataset                                                                    | Link                                                                |
+| --------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| GPT2-Small            | [whynlp/gsm8k-aug](https://huggingface.co/datasets/whynlp/gsm8k-aug)       | [whynlp/pccot-gpt2](https://huggingface.co/whynlp/pccot-gpt2)       |
+| GPT2-Small            | [whynlp/gsm8k-aug-nl](https://huggingface.co/datasets/whynlp/gsm8k-aug-nl) | [whynlp/pccot-gpt2-nl](https://huggingface.co/whynlp/pccot-gpt2-nl) |
+| Llama-3.2-1B-Instruct | [whynlp/gsm8k-aug](https://huggingface.co/datasets/whynlp/gsm8k-aug)       | [whynlp/pccot-llama1b](https://huggingface.co/whynlp/pccot-llama1b) |
 
 To run this model, please first clone this repo then execute the following command:
 
